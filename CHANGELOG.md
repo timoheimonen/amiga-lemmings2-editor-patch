@@ -1,5 +1,12 @@
 # Changelog
 
+## V1.1 (2026-10-07)
+
+- The object that follows the pointer in the Objects mode and every type
+  on the object page play their animations at the game's speed, all the
+  frames of every part in a loop: water and fires flow, an entrance opens,
+  a trap springs.
+
 ## V1.0 (2026-10-07)
 
 - The first release: an in-game level editor for Lemmings 2: The Tribes,

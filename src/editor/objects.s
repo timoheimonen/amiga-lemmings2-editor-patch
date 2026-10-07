@@ -1,4 +1,4 @@
-; Lemmings 2: The Tribes In-Game Level Editor V1.0
+; Lemmings 2: The Tribes In-Game Level Editor V1.1
 ; Copyright (c) 2026 Timo Heimonen <timo.heimonen@proton.me>
 ; Licensed under the MIT License. See the LICENSE file for details.
 ;
@@ -33,6 +33,12 @@
 ; Each of the style's types gets a role from what the game's code does with
 ; it (classify); the roles group the object page and name the objects in
 ; the status line.
+;
+; The type that follows the pointer and the types on the object page are
+; animated: each part shows frame anim_tick mod its frame count, as the
+; game's $CA62 steps every animated component once a pass and wraps it at
+; its count. anim_tick counts the passes that drew them. The level's own
+; objects stay paused at the frame the build left them.
 ;
 ; Game addresses are offsets in the game's hunk 0. A5 is the game's globals
 ; and A6 $dff000, as everywhere in the editor.
@@ -124,12 +130,13 @@ WARNING_COUNT   equ 7
 
 ; A type's entry in types
 T_DEF           equ 0           ; its definition
-T_BOX           equ 4           ; x0, y0, x1, y1 from the origin, no repeats
+T_BOX           equ 4           ; x0, y0, x1, y1 from the origin, no repeats,
+                                ; first frames
 T_PAGE_X        equ 12          ; the object page: its box's left
 T_ROW           equ 14          ; and row
-T_ORG_X         equ 16          ; the origin in its box
-T_ORG_Y         equ 18
-T_W             equ 20          ; the box's size
+T_ORG_X         equ 16          ; the origin in its page box, which holds
+T_ORG_Y         equ 18          ; every frame
+T_W             equ 20          ; the page box's size
 T_H             equ 22
 T_ROLE          equ 24
 T_REPEAT        equ 25          ; bit 0 repeats across, bit 1 down
@@ -178,20 +185,24 @@ types_init:
         bsr expand
         lea T_BOX(a3),a1
         bsr parts_box
+        st all_frames                   ; the page box: room for every frame
+        lea page_box,a1
+        bsr parts_box
+        sf all_frames
         ; in its page box: the origin's x on a word, its y on a cell row
-        move.w T_BOX(a3),d0
+        move.w (a1),d0
         and.w #-16,d0
         neg.w d0
         move.w d0,T_ORG_X(a3)
-        add.w T_BOX+4(a3),d0
+        add.w 4(a1),d0
         add.w #15,d0
         and.w #-16,d0
         move.w d0,T_W(a3)
-        move.w T_BOX+2(a3),d0
+        move.w 2(a1),d0
         and.w #-8,d0
         neg.w d0
         move.w d0,T_ORG_Y(a3)
-        add.w T_BOX+6(a3),d0
+        add.w 6(a1),d0
         addq.w #7,d0
         and.w #-8,d0
         move.w d0,T_H(a3)
@@ -495,9 +506,9 @@ block_anim:
         move.l (sp)+,d4
         rts
 
-; D4 a sprite's graphic -> A2 its first frame's descriptor (dx, dy, width,
-; height, ...), as $CABC and $10ABC find it. Preserves all else.
-sprite_frame:
+; D4 a sprite's graphic -> A2 its animation (frame count, frame pointers),
+; as $CABC and $10ABC find it. Preserves all else.
+sprite_anim:
         move.l d4,-(sp)
         movea.l G_STYLE_SPRITES(a5),a2
         btst #PART_COMMON,d4
@@ -505,14 +516,70 @@ sprite_frame:
         movea.l G_COMMON_SPRITES(a5),a2
 .style: and.w #$ff,d4
         lsl.w #2,d4
-        movea.l 0(a2,d4.w),a2           ; the animation
-        movea.l 2(a2),a2                ; its first frame
+        movea.l 0(a2,d4.w),a2
         move.l (sp)+,d4
         rts
 
+; D4 a sprite's graphic -> A2 its first frame's descriptor (dx, dy, width,
+; height, ...). Preserves all else.
+sprite_frame:
+        bsr sprite_anim
+        movea.l 2(a2),a2
+        rts
+
+; D4 a sprite's graphic, D0 dx, D1 dy, D2 width, D3 height of its first
+; frame -> the same for the rectangle all its frames cover. Preserves all
+; else.
+sprite_extent:
+        movem.l d4-d7/a2-a3,-(sp)
+        add.w d0,d2                     ; right
+        add.w d1,d3                     ; bottom
+        bsr sprite_anim
+        move.w (a2),d7
+        addq.l #6,a2                    ; the second frame's pointer
+        subq.w #2,d7
+        bmi .done
+.frame: movea.l (a2)+,a3
+        move.w (a3),d4
+        cmp.w d4,d0
+        ble .top
+        move.w d4,d0
+.top:   move.w 2(a3),d5
+        cmp.w d5,d1
+        ble .right
+        move.w d5,d1
+.right: add.w 4(a3),d4
+        cmp.w d4,d2
+        bge .bottom
+        move.w d4,d2
+.bottom:
+        add.w 6(a3),d5
+        cmp.w d5,d3
+        bge .next
+        move.w d5,d3
+.next:  dbra d7,.frame
+.done:  sub.w d0,d2
+        sub.w d1,d3
+        movem.l (sp)+,d4-d7/a2-a3
+        rts
+
+; A2 an animation, its frame count first -> D5 the frame the preview and
+; the object page show: anim_tick modulo the count. Preserves all else.
+anim_frame:
+        moveq #0,d5
+        cmp.w #1,(a2)
+        bls .out
+        move.w anim_tick,d5
+        divu (a2),d5
+        clr.w d5
+        swap d5
+.out:   rts
+
 ; A1 a part -> D0 x, D1 y, D2 width, D3 height it covers in the map: the
 ; cells of a block animation's first frame, the cell of an attributes part,
-; a sprite's first frame. Preserves the other registers.
+; a sprite's first frame, or with all_frames set the rectangle all the
+; sprite's frames cover (a block animation's frames are all one size).
+; Preserves the other registers.
 part_rect:
         movem.l d4/a2,-(sp)
         move.w 4(a1),d4
@@ -534,12 +601,15 @@ part_rect:
         bra .out
 .sprite:
         bsr sprite_frame
-        move.w (a1),d0
-        add.w (a2),d0
-        move.w 2(a1),d1
-        add.w 2(a2),d1
+        move.w (a2),d0
+        move.w 2(a2),d1
         move.w 4(a2),d2
         move.w 6(a2),d3
+        tst.b all_frames
+        beq .place
+        bsr sprite_extent
+.place: add.w (a1),d0
+        add.w 2(a1),d1
 .out:   movem.l (sp)+,d4/a2
         rts
 
@@ -1492,8 +1562,9 @@ draw_preview:
         move.w d6,d0
         move.w d7,d1
         bsr draw_type
+        addq.w #1,anim_tick             ; the next frame in the next pass
         bsr wait_blit
-        move.w T_BOX(a3),d0
+        move.w T_BOX(a3),d0             ; the box round its first frames
         add.w d6,d0
         sub.w G_SCROLL_X(a5),d0
         move.w T_BOX+2(a3),d1
@@ -1542,8 +1613,9 @@ frame_box:
         rts
 
 ; A0 a definition, D0 x, D1 y in the map: the object without repeats in
-; the back buffer: the first frames of its block animations, then its
-; sprites with the game's sprite routine ($10ABC) in the play view.
+; the back buffer, each part in the frame anim_frame gives: its block
+; animations, then its sprites with the game's sprite routine ($10ABC) in
+; the play view.
 draw_type:
         movem.l d0-d7/a0-a4,-(sp)
         moveq #0,d2
@@ -1560,7 +1632,9 @@ draw_type:
         cmp.w #GRAPHIC_CELL,d4
         beq .tiles_next
         bsr block_anim
-        movea.l 6(a2),a4                ; the first frame's tiles
+        bsr anim_frame
+        lsl.w #2,d5
+        movea.l 6(a2,d5.w),a4           ; the frame's tiles
         move.w 4(a2),d6
         subq.w #1,d6
         move.w 2(a3),d1
@@ -1587,6 +1661,8 @@ draw_type:
         move.w 4(a3),d4
         btst #PART_SPRITE,d4
         beq .sprites_next
+        bsr sprite_anim
+        bsr anim_frame                  ; -> D5 the frame
         movea.l G_STYLE_SPRITES(a5),a0
         btst #PART_COMMON,d4
         beq .style
@@ -1596,7 +1672,6 @@ draw_type:
         move.w 2(a3),d1
         move.w #$8000,d2                ; clipped to the view, masked
         moveq #0,d3                     ; the play view's descriptor
-        moveq #0,d5                     ; the first frame
         GCALL sprite
 .sprites_next:
         addq.l #8,a3
@@ -1981,13 +2056,14 @@ object_widget_text:
         rts
 
 ;============================================================================
-; The object page: the style's types in rows by role, each drawn as its
-; first frames; a click chooses the type to place.
+; The object page: the style's types in rows by role, animated, each in a
+; box that holds all its frames; a click chooses the type to place.
 
 open_types:
         tst.w type_count
         beq .none
         sf dragging
+        clr.w anim_tick                 ; every type from its first frame
         move.b #PAGE_TYPES,edit_page
         lea types_widgets(pc),a0
         move.l a0,widgets
@@ -2000,6 +2076,7 @@ open_types:
 
 close_types:
         move.b #PAGE_EDIT,edit_page
+        clr.w anim_tick                 ; the preview from its first frame
         bsr mode_widgets
         rts
 
@@ -2028,6 +2105,7 @@ types_pass:
         bsr read_key
         bsr update_pointer
         bsr types_draw
+        addq.w #1,anim_tick             ; the next frames in the next pass
         bsr types_input
         bsr types_frames
         bsr edit_help
@@ -2340,6 +2418,7 @@ exit_count:     ds.w 1
 switch_count:   ds.w 1
 target_count:   ds.w 1
 open_teleporter: ds.w 1
+page_box:       ds.w 4                  ; types_init: all frames' x0, y0, x1, y1
 part_count:     ds.w 1
 part_links:     ds.w 1
 steps_left:     ds.w 1
@@ -2358,6 +2437,7 @@ held_widget:    ds.w 1                  ; the button the held press began on
 jump_scroll_x:  ds.w 1
 jump_scroll_y:  ds.w 1
 scroll_jump:    ds.b 1
+all_frames:     ds.b 1                  ; part_rect: a sprite's every frame
                 even
 parts:          ds.w 4*MAX_PARTS
 old_map:        ds.l MAP_CELLS

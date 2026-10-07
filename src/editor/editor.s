@@ -1,4 +1,4 @@
-; Lemmings 2: The Tribes In-Game Level Editor V1.0
+; Lemmings 2: The Tribes In-Game Level Editor V1.1
 ; Copyright (c) 2026 Timo Heimonen <timo.heimonen@proton.me>
 ; Licensed under the MIT License. See the LICENSE file for details.
 ;
@@ -2559,6 +2559,8 @@ ask_on_entry:   ds.b 1                  ; +120 the leave question on return
 question_kind:  ds.b 1                  ; +121 what the bar's question asks
 limit_words:    ds.w 6                  ; +122 the limits page's scroll words
 page_read:      ds.w 1                  ; +134 the list's page in entries, or -1
+anim_tick:      ds.w 1                  ; +136 passes the preview or the object
+                                        ; page has animated; frame = tick mod frames
 
 play_style:     ds.w 1
 names_left:     ds.w 1

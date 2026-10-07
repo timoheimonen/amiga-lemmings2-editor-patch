@@ -91,7 +91,8 @@ skills and clock, and ends on the editor's result page; the tribes'
 progress is never changed. The editor works in the game's own view with
 the editor bar below it: **Terrain** (the style's pieces or single tiles,
 erase, pick, Decor and Steel), **Objects** (place, move and delete them,
-with warnings), **Param** (title, skills, time, release rate, grading, the
+with warnings; the object to place and the object page show their
+animations), **Param** (title, skills, time, release rate, grading, the
 start view and the scroll limits), **Test**, **Undo** and **Redo** (32
 steps) and **Save**. Every button has a key, and the bar's help line names
 it. A level is one file of 8648 bytes, the game's own level record: copy
