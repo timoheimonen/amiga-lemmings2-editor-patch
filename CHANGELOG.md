@@ -1,5 +1,14 @@
 # Changelog
 
+## V1.2 (2026-10-07)
+
+- The PAL release of the game (SPS 0351) is supported besides the US
+  release (SPS 1976). `patch.py` takes the images of either release, IPF
+  or ADF, all three disks of one release, and installs the slave and the
+  editor for that release; it names the release it installed. The PAL
+  release's disk 1 has no saved positions: the game starts with its
+  default positions, and SAVE writes the file.
+
 ## V1.1 (2026-10-07)
 
 - The object that follows the pointer in the Objects mode and every type

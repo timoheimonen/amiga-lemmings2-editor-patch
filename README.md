@@ -6,8 +6,9 @@ view, with the game's terrain, objects and skills, test play them at once,
 and keep them as files you can share.  
 The editor integrates directly into the game engine, ensuring 100% authentic gameplay and physics.
 
-`patch.py` makes the install from your own copy of the game: your images of
-its three disks, which it identifies by their SHA-256. This repository holds
+`patch.py` makes the install from your own copy of the game, the US or the
+PAL release: your images of its three disks, which it identifies by their
+SHA-256. This repository holds
 only the editor's and the slave's own code and the tools; it contains no
 game files.
 
@@ -40,8 +41,10 @@ More: [a new level](docs/screenshots/Lemmings%202%20in-game%20editor%20-%20new%2
 - Python 3.8 or later (for `patch.py`).
 - [vasm](http://sun.hasenbraten.de/vasm/) `vasmm68k_mot` (only for
   `build.py`).
-- Your own copies of the game's three disks, as IPF or as ADF images with
-  these SHA-256 hashes:
+- Your own copies of the game's three disks, all three of one release, as
+  IPF or as ADF images with these SHA-256 hashes:
+
+The US release (SPS 1976):
 
 | Image | IPF SHA-256 | ADF SHA-256 |
 | --- | --- | --- |
@@ -49,9 +52,21 @@ More: [a new level](docs/screenshots/Lemmings%202%20in-game%20editor%20-%20new%2
 | Disk 2 | `05b800affc4bcb5044f41606bc807d7efc5f0669b82abb1b9573f38631257965` | `fcbc1b870ae30bc5f79a58ee8bef81e1e7743472240de8896f21d9508abdff91` |
 | Disk 3 | `e5cff8776a8a09a8fb1d1b7f23767ccab5c2acc6f06b10ee0f13f54dd57f5ce5` | `5219ae0d109ef94ce1eb84212024b83e929def0d2e8ea68fc5c0c4abd4589fb3` |
 
-Other versions are refused. An ADF image holds only the standard AmigaDOS
-tracks; disk 3 has a track an ADF cannot hold, and the ADF hash above is
-the one with its blocks as zeros.
+The PAL release (SPS 0351):
+
+| Image | IPF SHA-256 | ADF SHA-256 |
+| --- | --- | --- |
+| Disk 1 | `d443e31c1021fdf96dcc9271486478854412748195debc111637b3300f76c2ac` | `0a634a5a8b36206a6478fda5218653acf6523e534372c670c56f78b607163508` |
+| Disk 2 | `41a381621ee8e1b76763f20d2bacca446085033ac9bfde9492e963cb09509f7b` | `2c7bd93ed2c1bad612e83c5e2c749861419673139b32d1d7b2e2013c6e0007a0` |
+| Disk 3 | `b24ced40bd23e1371ce75bad97195fa67471bcb4a7f7eff9a4f1860d935ca502` | `de1a9ef4aef4e46b5dd5f9899aaa84d0f6a9f00b72da1b9bafc0c724afcb917b` |
+
+Other versions are refused, as are disks of the two releases mixed. An ADF
+image holds only the standard AmigaDOS tracks; disk 3 has a track an ADF
+cannot hold, and the ADF hashes above are the ones with its blocks as
+zeros. The two releases differ only in the main program, so the install
+has the slave and the editor for the release your disks are; the PAL
+release's disk 1 has no saved positions, so the game starts with its
+default positions and SAVE writes the file.
 
 ## Making the install
 
@@ -100,7 +115,8 @@ the files to share your levels.
 
 ## Limitations
 
-- PAL only (see Requirements). The game's Tab, which switches between PAL
+- A PAL display only, with either release (see Requirements). The game's
+  Tab, which switches between PAL
   and NTSC in play, does nothing while your own levels are played, and the
   editor goes back to PAL when it opens.
 - The list holds up to 512 levels with names of up to 31 characters; with
@@ -124,9 +140,11 @@ python3 build.py
 ```
 
 Assembles the slave (`src/whdload/slave.s`) and the editor
-(`src/editor/editor.s`, which includes the other editor sources), builds the
-install's icon and embeds the three in the generated section of `patch.py`,
-so that users of `patch.py` need only Python.
+(`src/editor/editor.s`, which includes the other editor sources) for each
+of the two releases (the PAL release's with `PAL_RELEASE`,
+`src/whdload/release.i`), builds the install's icon and embeds the five in
+the generated section of `patch.py`, so that users of `patch.py` need only
+Python.
 
 ## How it works
 
@@ -136,9 +154,15 @@ so that users of `patch.py` need only Python.
   loader does without an operating system, replaces the game's floppy disk
   access with WHDLoad's file access to `data/`, reads the saved positions
   without asking for their disk and adds the quit key. The game checks for
-  its original disk 3 before PRACTICE, MAP and PLAY; `patch.py` copies the
-  long word that check expects from your own main program into the slave,
-  which puts it where the check looks. The slave then loads the editor.
+  its original disk 3: the US release before PRACTICE, MAP and PLAY, the
+  PAL release when a level is chosen and before PRACTICE. `patch.py` copies
+  the long word that check expects from your own main program into the
+  slave, which puts it where the check looks. The PAL release also reads
+  disk 3 once, at its first title; as WHDLoad has no floppy drive to read,
+  the slave lets that reading return at once. The slave then loads the
+  editor. Each release has its own slave and editor, assembled from the
+  same sources (`src/whdload/release.i` gives the game's addresses in
+  both).
 - `src/editor/editor.s` checks the game's original bytes at its patch points
   and hooks the title screen (EDIT in place of the crossed-out QUIT), the
   end of play, the play keys and the level start. The list, the New, Rename

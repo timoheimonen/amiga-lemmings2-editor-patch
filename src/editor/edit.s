@@ -1,4 +1,4 @@
-; Lemmings 2: The Tribes In-Game Level Editor V1.1
+; Lemmings 2: The Tribes In-Game Level Editor V1.2
 ; Copyright (c) 2026 Timo Heimonen <timo.heimonen@proton.me>
 ; Licensed under the MIT License. See the LICENSE file for details.
 ;
@@ -37,28 +37,28 @@
 ; sets up.
 
 ; Game routines, hunk 0
-G_WAIT_PLAY     equ $013a2      ; wait until the interrupt took the last pass
-G_SCROLL        equ $02394      ; the play loop's scrolling
-G_COPY_VIEW     equ $01f10      ; the view into the back display buffer
-G_VIEW_DESC     equ $003f8      ; the play display descriptor follows the scroll
-G_OBJECTS       equ $0ca62      ; the objects' animation and sprites
-G_REDRAW        equ $021a4      ; draw the cells marked with bit 31
-G_BUTTONS       equ $009a2      ; mouse buttons into A5+$1BC..$1C2
-G_KEY           equ $00f54      ; the next key (its character), with repeat
-G_PLAY_POINTER  equ $01798      ; pointer A5+$21E in the play display
-G_PLANES        equ $0129c      ; the play display's plane pointers, a field
-G_WAIT_FRAME    equ $0138a      ; wait for the next field
-G_MUSIC_OFF     equ $13c10
-G_MUSIC_ON      equ $13bea
-G_IDLE          equ $00f88      ; rts: the frame callback outside play
-G_VIDEO         equ $00cb6      ; Tab: the display and the clock to PAL or NTSC
-R_LOOP_REST     equ $0014e      ; the play loop after its scrolling
+        GAME G_WAIT_PLAY,$013a2,$01382          ; wait until the interrupt took the last pass
+        GAME G_SCROLL,$02394,$02360             ; the play loop's scrolling
+        GAME G_COPY_VIEW,$01f10,$01edc          ; the view into the back display buffer
+        GAME G_VIEW_DESC,$003f8,$003f0          ; the play display descriptor follows the scroll
+        GAME G_OBJECTS,$0ca62,$0c7f0            ; the objects' animation and sprites
+        GAME G_REDRAW,$021a4,$02170             ; draw the cells marked with bit 31
+        GAME G_BUTTONS,$009a2,$0099a            ; mouse buttons into A5+$1BC..$1C2
+        GAME G_KEY,$00f54,$00f44                ; the next key (its character), with repeat
+        GAME G_PLAY_POINTER,$01798,$01778       ; pointer A5+$21E in the play display
+        GAME G_PLANES,$0129c,$0127c             ; the play display's plane pointers, a field
+        GAME G_WAIT_FRAME,$0138a,$0136a         ; wait for the next field
+        GAME G_MUSIC_OFF,$13c10,$13956
+        GAME G_MUSIC_ON,$13bea,$13930
+        GAME G_IDLE,$00f88,$00f78               ; rts: the frame callback outside play
+        GAME G_VIDEO,$00cb6,$00cae              ; Tab: the display and the clock to PAL or NTSC
+        GAME R_LOOP_REST,$0014e,$00146          ; the play loop after its scrolling
 
 ; Patch points, hunk 0
-P_FRAME         equ $00146      ; bsr.w G_WAIT_PLAY / bsr.w G_SCROLL
-P_SPRITE_POS    equ $014ec      ; moveq #0,d0 / addi.w #$2c,d2 / lsl.w #8,d2
+        GAME P_FRAME,$00146,$0013e              ; bsr.w G_WAIT_PLAY / bsr.w G_SCROLL
+        GAME P_SPRITE_POS,$014ec,$014cc         ; moveq #0,d0 / addi.w #$2c,d2 / lsl.w #8,d2
 
-SCROLL_FLAGS    equ $1c662      ; hunk 0: scroll of each buffer's last pass
+        GAME SCROLL_FLAGS,$1c662,$1c308         ; hunk 0: scroll of each buffer's last pass
 
 ; Hunk 1: the play display's copper list, the play colours and pointer
 COP_PLAY_COLOURS equ $00034     ; its first colour move
@@ -88,15 +88,15 @@ G_PASS_DONE     equ $1cb
 G_NTSC          equ $1cf            ; set while Tab has chosen NTSC
 G_REDRAW_ALL    equ $1e8
 G_MUSIC         equ $1eb
-G_FRONT         equ $1ee
-G_BACK          equ $1f2
-G_CALLBACK      equ $222
-G_LEVEL_PASSES  equ $25e            ; passes since the level started ($196)
-G_TILES         equ $24e
-G_MAP           equ $262
-G_MODIFIERS     equ $2aa            ; shift, alt, control, amiga
-G_KEY_NEW       equ $2ae
-G_HELD_KEY      equ $2af
+        GAME G_FRONT,$1ee,$1ec
+        GAME G_BACK,$1f2,$1f0
+        GAME G_CALLBACK,$222,$220
+        GAME G_LEVEL_PASSES,$25e,$25c           ; passes since the level started ($196)
+        GAME G_TILES,$24e,$24c
+        GAME G_MAP,$262,$260
+        GAME G_MODIFIERS,$2aa,$2a8              ; shift, alt, control, amiga
+        GAME G_KEY_NEW,$2ae,$2ac
+        GAME G_HELD_KEY,$2af,$2ad
 
 ; The display buffers: four planes of 44-byte rows, 352x192 pixels; the
 ; screen shows them from (16,16), the cursor's (0,0).

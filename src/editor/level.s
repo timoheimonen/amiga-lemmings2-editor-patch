@@ -1,4 +1,4 @@
-; Lemmings 2: The Tribes In-Game Level Editor V1.1
+; Lemmings 2: The Tribes In-Game Level Editor V1.2
 ; Copyright (c) 2026 Timo Heimonen <timo.heimonen@proton.me>
 ; Licensed under the MIT License. See the LICENSE file for details.
 ;
@@ -36,27 +36,28 @@
 ; (get_le, put_le), the parsed header's big-endian.
 
 ; Game routines, hunk 0
-G_PICKER        equ $16172      ; SelectPracticeSkills: eight IDs to A5+$1A0
-G_PANEL         equ $0f84a      ; the skill panel, drawn from the header
-G_PANEL_SLOT    equ $0f8d8      ; D0 a slot: its highlight and its name
-G_PANEL_COUNT   equ $0f98c      ; D0 a count, D1 a slot: its digits
-G_CLOCK         equ $0fa14      ; the panel's clock, when A5+$1DB is set
-G_FRAME_END     equ $01396      ; wait for the interrupt's A5+$1C4
+        GAME G_PICKER,$16172,$15ea6             ; SelectPracticeSkills: eight IDs to A5+$1A0
+        GAME G_PANEL,$0f84a,$0f5b4              ; the skill panel, drawn from the header
+        GAME G_PANEL_SLOT,$0f8d8,$0f642         ; D0 a slot: its highlight and its name
+        GAME G_PANEL_COUNT,$0f98c,$0f6f6        ; D0 a count, D1 a slot: its digits
+        GAME G_CLOCK,$0fa14,$0f77e              ; the panel's clock, when A5+$1DB is set
+        GAME G_FRAME_END,$01396,$01376          ; wait for the interrupt's A5+$1C4
 
 ; Patched only while the picker runs, hunk 0
-P_PICKER_FRAME  equ $1619c      ; jsr WaitFrame.l, in its loop
-P_PICKER_DONE   equ $161b6      ; movea.l ($1C104).l,a0: after the eighth
-P_PICKER_PROMPT equ $16478      ; lea ($16486).l,a0: its prompt
-PICKER_PROMPT   equ $16486
-P_PICKER_ICON   equ $16444      ; bsr.w $10ABC / addi.w #32,d0: a grid icon
-P_PICKER_PICK   equ $16358      ; addq.w #1,d0 / move.l d0,-(sp) /
+        GAME P_PICKER_FRAME,$1619c,$15ed0       ; jsr WaitFrame.l, in its loop
+        GAME P_PICKER_DONE,$161b6,$15eea        ; movea.l ($1C104).l,a0: after the eighth
+        GAME P_PICKER_PROMPT,$16478,$161ac      ; lea ($16486).l,a0: its prompt
+        GAME PICKER_PROMPT,$16486,$161ba
+        GAME P_PICKER_ICON,$16444,$16178        ; bsr.w $10ABC / addi.w #32,d0: a grid icon
+        GAME PICKER_ICON_BSR,$6100a676,$6100a6ac ; that bsr.w G_SPRITE
+        GAME P_PICKER_PICK,$16358,$1608c        ; addq.w #1,d0 / move.l d0,-(sp) /
                                 ; lea $1a0(a5),a1: the ID clicked
-P_PICKER_NAME   equ $163fa      ; addq.w #1,d0 / lea ($1C10C).l,a0: the
+        GAME P_PICKER_NAME,$163fa,$1612e        ; addq.w #1,d0 / lea ($1C10C).l,a0: the
                                 ; name of the ID under the pointer
-SKILL_NAMES     equ $1c10c      ; 14 bytes a skill ID
-DESCRIPTOR_7    equ $1c104      ; the menu screen's descriptor (a pointer)
+        GAME SKILL_NAMES,$1c10c,$1bdd4          ; 14 bytes a skill ID
+        GAME DESCRIPTOR_7,$1c104,$1bdcc         ; the menu screen's descriptor (a pointer)
 D_PLANES        equ $22         ; the planes its sprites are drawn in
-G_SHAPES        equ $1c5a2      ; seven BE16 pairs: columns, rows
+        GAME G_SHAPES,$1c5a2,$1c248             ; seven BE16 pairs: columns, rows
 
 ; Hunk 1
 COP_MENU_SPRITES equ $544       ; the menu list's sprite pointers (the
@@ -1144,7 +1145,7 @@ picker_call:
         GCALL picker
         movea.l hunk0,a2                ; the original bytes again
         move.l a2,d0
-        add.l #$0138a,d0
+        add.l #G_WAIT_FRAME,d0
         adda.l #P_PICKER_FRAME,a2
         move.l d0,2(a2)
         movea.l hunk0,a2
@@ -1157,7 +1158,7 @@ picker_call:
         move.l d0,2(a2)
         movea.l hunk0,a2
         adda.l #P_PICKER_ICON,a2
-        move.l #$6100a676,(a2)+
+        move.l #PICKER_ICON_BSR,(a2)+
         move.l #$06400020,(a2)
         movea.l hunk0,a2
         adda.l #P_PICKER_PICK,a2

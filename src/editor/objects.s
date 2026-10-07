@@ -1,4 +1,4 @@
-; Lemmings 2: The Tribes In-Game Level Editor V1.1
+; Lemmings 2: The Tribes In-Game Level Editor V1.2
 ; Copyright (c) 2026 Timo Heimonen <timo.heimonen@proton.me>
 ; Licensed under the MIT License. See the LICENSE file for details.
 ;
@@ -44,15 +44,15 @@
 ; and A6 $dff000, as everywhere in the editor.
 
 ; Game routines, hunk 0
-G_FIND_TYPE     equ $0c67c      ; D0 a type -> A0 its L2OB definition
-G_EXPAND_OBJECTS equ $0c584     ; link table and pool cleared, objects expanded
-G_BORDER_CLEAR  equ $0d23a      ; the map's border cells cleared
-PLACEMENTS      equ $1bdb4      ; the 64 placements the game expands
+        GAME G_FIND_TYPE,$0c67c,$0c40a          ; D0 a type -> A0 its L2OB definition
+        GAME G_EXPAND_OBJECTS,$0c584,$0c312     ; link table and pool cleared, objects expanded
+        GAME G_BORDER_CLEAR,$0d23a,$0cfc8       ; the map's border cells cleared
+        GAME PLACEMENTS,$1bdb4,$1ba7c           ; the 64 placements the game expands
 
 ; Game globals (A5)
-G_COMMON_SPRITES equ $23e       ; sprite animations of graphic bit 14
-G_STYLE_SPRITES equ $246        ; the style's sprite animations (L2SI)
-G_BLOCK_ANIMS   equ $252        ; the style's block animations (L2BI)
+        GAME G_COMMON_SPRITES,$23e,$23c         ; sprite animations of graphic bit 14
+        GAME G_STYLE_SPRITES,$246,$244          ; the style's sprite animations (L2SI)
+        GAME G_BLOCK_ANIMS,$252,$250            ; the style's block animations (L2BI)
 
 ; The record's placements
 R_OBJECTS       equ $1f48       ; L2BO payload

@@ -1,10 +1,10 @@
-; Lemmings 2: The Tribes In-Game Level Editor V1.1
+; Lemmings 2: The Tribes In-Game Level Editor V1.2
 ; Copyright (c) 2026 Timo Heimonen <timo.heimonen@proton.me>
 ; Licensed under the MIT License. See the LICENSE file for details.
 ;
 ; The editor's main file. The editor puts an EDIT button on the game's
 ; title screen, over the QUIT button, which the game crosses out when there
-; is no operating system to quit to. EDIT opens the list of the custom
+; is no operating system to quit to (the PAL release always does). EDIT opens the list of the custom
 ; levels in the install's Levels directory, where a level is played,
 ; edited, made (the New page), renamed or deleted. A custom level plays in
 ; its own style with 60 lemmings and its own skills and clock, and ends in
@@ -44,58 +44,70 @@
 ;
 ; Game addresses are offsets in the game's hunk 0 unless another hunk is
 ; named; init adds the load address of the hunk, from the interface table
-; (SETADDR). Hunk 3 holds the record of the selected level.
+; (SETADDR). Hunk 3 holds the record of the selected level. The editor is
+; assembled for one release of the game (release.i); GAME gives an address
+; in the US release and in the PAL release. Addresses in the comments are
+; the US release's.
 
         include "whdload_api.i"
         include "version.i"             ; EDITOR_VERSION
+        include "release.i"             ; GAME
 
 ; Game routines, hunk 0
-G_SOUND         equ $00602      ; play the effect A5+$15c
-G_STOP_SOUND    equ $165dc      ; what the title does before leaving
-G_POINTER       equ $01712      ; show the pointer sprite A5+$21e, height A5+$186
-G_WAIT_PRESS    equ $0150e      ; wait for the left mouse button
-G_INIT_PLAY     equ $0151a      ; entities, skills and clock from the header
-G_LOAD_STYLE    equ $018ce      ; style, tune and tribe art of tribe A5+$14c
-G_SELECT_LEVEL  equ $019ae      ; select level D0 and parse it
-G_COUNT         equ $019e8      ; lemming count of the selected level
+        GAME G_SOUND,$00602,$005fa              ; play the effect A5+$15c
+        GAME G_STOP_SOUND,$165dc,$16310         ; what the title does before leaving
+        GAME G_POINTER,$01712,$016f2            ; show the pointer sprite A5+$21e, height A5+$186
+        GAME G_WAIT_PRESS,$0150e,$014ee         ; wait for the left mouse button
+        GAME G_INIT_PLAY,$0151a,$014fa          ; entities, skills and clock from the header
+        GAME G_LOAD_STYLE,$018ce,$018ae         ; style, tune and tribe art of tribe A5+$14c
+        GAME G_SELECT_LEVEL,$019ae,$0198e       ; select level D0 and parse it
+        GAME G_COUNT,$019e8,$019e0              ; lemming count of the selected level
+        ifnd PAL_RELEASE
 G_PROTECTION    equ $01b6e      ; the protection gate the title's buttons call
-G_COPPER        equ $00fc8      ; show display D0
-G_FADE          equ $0e5d8      ; fade the copper colours from A1 to palette A0
-G_UNPACK_MENU   equ $0e272      ; unpack the menu background
-G_SHOW_MENU     equ $0e286      ; copy it to the menu screen
-G_RESTORE_RECT  equ $0e2aa      ; D0 x, D1 y, D2 width, D3 height: background back
-G_TEXT          equ $0f356      ; draw the text stream A0
-FONT_WIDTHS     equ $0f7ea      ; the menu font's widths, ' ' to 'z' (data)
-G_SPRITE        equ $10abc      ; draw a sprite
+        endif
+        GAME G_COPPER,$00fc8,$00fb8             ; show display D0
+        GAME G_FADE,$0e5d8,$0e342               ; fade the copper colours from A1 to palette A0
+        GAME G_UNPACK_MENU,$0e272,$0dfdc        ; unpack the menu background
+        GAME G_SHOW_MENU,$0e286,$0dff0          ; copy it to the menu screen
+        GAME G_RESTORE_RECT,$0e2aa,$0e014       ; D0 x, D1 y, D2 width, D3 height: background back
+        GAME G_TEXT,$0f356,$0f0c0               ; draw the text stream A0
+        GAME FONT_WIDTHS,$0f7ea,$0f554          ; the menu font's widths, ' ' to 'z' (data)
+        GAME G_SPRITE,$10abc,$10826             ; draw a sprite
 
 ; Where the editor continues in the game, hunk 0
-R_TITLE         equ $00080      ; show the title (as after play)
-R_BUILD         equ $000b2      ; build the selected level and play it
-R_RESULT        equ $0033e      ; the game's own end of play
-R_ESCAPE_TEST   equ $00be2      ; Esc's ble.w: the level again after eight passes
-R_AFTER_TAB     equ $00bb6      ; the play keys after the Tab test
-R_RELEASE       equ $09ade      ; the release countdown in ReleaseL2Lemming
-R_OPENING       equ $001f2      ; the entrances' next frame
-R_OPENED        equ $0022e      ; past them
-R_CROSSES_DONE  equ $0d91e      ; after the title's QUIT crosses
-R_TITLE_AGAIN   equ $0da68      ; show the title again and wait (as after LOAD)
+        GAME R_TITLE,$00080,$00078              ; show the title (as after play)
+        GAME R_BUILD,$000b2,$000aa              ; build the selected level and play it
+        GAME R_RESULT,$0033e,$00336             ; the game's own end of play
+        GAME R_ESCAPE_TEST,$00be2,$00bda        ; Esc's ble.w: the level again after eight passes
+        GAME R_AFTER_TAB,$00bb6,$00bae          ; the play keys after the Tab test
+        GAME R_RELEASE,$09ade,$09876            ; the release countdown in ReleaseL2Lemming
+        GAME R_OPENING,$001f2,$001ea            ; the entrances' next frame
+        GAME R_OPENED,$0022e,$00226             ; past them
+        GAME R_CROSSES_DONE,$0d91e,$0d6a4       ; after the title's QUIT crosses
+        GAME R_TITLE_AGAIN,$0da68,$0d7e4        ; show the title again and wait (as after LOAD)
+        ifd PAL_RELEASE
+R_NEXT_COLUMN   equ $0d74c      ; the title's click test after the QUIT column
+QUIT_RIGHT      equ $44         ; the QUIT column: x below this
+        endif
 
 ; Patch points, hunk 0, with their original bytes in the check table
-P_CROSSES       equ $0d8e4      ; tst.l ($4).w / bne.w R_CROSSES_DONE
-P_QUIT          equ $0dae8      ; tst.l ($4).w / beq.w (title loop)
-P_COUNT         equ $019d4      ; bsr.w G_COUNT / move.w d0,$124(a5)
-P_PLAY_END      equ $00336      ; tst.b $1e7(a5) / bne.w R_TITLE
-P_ESCAPE        equ $00bd8      ; move.l $25e(a5),d0 / cmp.l #8,d0: Esc in play
-P_TAB           equ $00bae      ; cmp.b #9,d0 / beq.w G_VIDEO: Tab in play
-P_RELEASE       equ $09ad6      ; tst.b $1de(a5) / bne.w (rts): a lemming out
-P_OPENING       equ $001ea      ; tst.b $1e6(a5) / beq.w: the entrances opening
+        GAME P_CROSSES,$0d8e4,$0d672            ; tst.l ($4).w / bne.w R_CROSSES_DONE
+                                                ; (PAL: the crosses' first two instructions)
+        GAME P_QUIT,$0dae8,$0d746               ; tst.l ($4).w / beq.w (title loop)
+                                                ; (PAL: cmp.w #QUIT_RIGHT,d0 / blt.b (title loop))
+        GAME P_COUNT,$019d4,$019cc              ; bsr.w G_COUNT / move.w d0,$124(a5)
+        GAME P_PLAY_END,$00336,$0032e           ; tst.b $1e7(a5) / bne.w R_TITLE
+        GAME P_ESCAPE,$00bd8,$00bd0             ; move.l $25e(a5),d0 / cmp.l #8,d0: Esc in play
+        GAME P_TAB,$00bae,$00ba6                ; cmp.b #9,d0 / beq.w G_VIDEO: Tab in play
+        GAME P_RELEASE,$09ad6,$0986e            ; tst.b $1de(a5) / bne.w (rts): a lemming out
+        GAME P_OPENING,$001ea,$001e2            ; tst.b $1e6(a5) / beq.w: the entrances opening
 
 ; Data, hunk 0
-HEADER          equ $18d16      ; the parsed header of the selected level
+        GAME HEADER,$18d16,$189de               ; the parsed header of the selected level
 H_THRESHOLD     equ $4a         ; result threshold
-STYLE_NAMES     equ $1c3e4      ; twelve names of eight characters
-DESCRIPTOR_6    equ $1c0ac      ; display descriptor of the title screen
-DESCRIPTOR_7_ENTRY equ $1c0c0   ; and of the menu screen
+        GAME STYLE_NAMES,$1c3e4,$1c0ac          ; twelve names of eight characters
+        GAME DESCRIPTOR_6,$1c0ac,$1bd74         ; display descriptor of the title screen
+        GAME DESCRIPTOR_7_ENTRY,$1c0c0,$1bd88   ; and of the menu screen
 D_BITMAP        equ 16          ; its bitmap pointer
 
 ; Hunk 1
@@ -124,8 +136,8 @@ G_PRACTICE      equ $1e7
 G_ENTRANCES     equ $194        ; entrances in the level's entrance table
 G_RELEASE_HOLD  equ $1de        ; ReleaseL2Lemming releases nothing while set
 G_OPENING       equ $1e6        ; the entrances are opening
-G_POINTER_DATA  equ $21e
-G_MENU_ART      equ $24a        ; sprites of the menu screens
+        GAME G_POINTER_DATA,$21e,$21c
+        GAME G_MENU_ART,$24a,$248               ; sprites of the menu screens
 
 ; The level record (the FORM/L2LV file)
 RECORD_SIZE     equ $21c8
@@ -264,6 +276,7 @@ start:  bra.w init
         dc.l names                      ; and the names
 
 ; Original bytes: hunk 0 offset, long word.
+        ifnd PAL_RELEASE
 checks: dc.l P_CROSSES,$4ab80004,P_CROSSES+4,$66000034
         dc.l P_QUIT,$4ab80004,P_QUIT+4,$6700fe7a
         dc.l P_COUNT,$61000012,P_COUNT+4,$3b400124
@@ -272,10 +285,22 @@ checks: dc.l P_CROSSES,$4ab80004,P_CROSSES+4,$66000034
         dc.l P_TAB,$b03c0009,P_TAB+4,$67000102
         dc.l P_RELEASE,$4a2d01de,P_RELEASE+4,$66004aac
         dc.l P_OPENING,$4a2d01e6,P_OPENING+4,$6700003e
+        else
+checks: dc.l P_CROSSES,$206d0248        ; movea.l $248(a5),a0
+        dc.l P_CROSSES+4,$303c0004      ; move.w #4,d0
+        dc.l P_QUIT,$b07c0044           ; cmp.w #QUIT_RIGHT,d0
+        dc.l P_QUIT+4,$6d9ab07c         ; blt.b (title loop) / cmp.w (next)
+        dc.l P_COUNT,$61000012,P_COUNT+4,$3b400124
+        dc.l P_PLAY_END,$4a2d01e7,P_PLAY_END+4,$6600fd44
+        dc.l P_ESCAPE,$202d025c,P_ESCAPE+4,$b0bc0000
+        dc.l P_TAB,$b03c0009,P_TAB+4,$67000102
+        dc.l P_RELEASE,$4a2d01de,P_RELEASE+4,$66004a7e
+        dc.l P_OPENING,$4a2d01e6,P_OPENING+4,$6700003e
+        endif
         dc.l FONT_WIDTHS,$06050808      ; ' ', '!', '"' and '#'
         dc.l G_TEXT,$48e7e0fe           ; movem.l d0-d2/a0-a6,-(sp)
         dc.l G_PICKER,$426d014e,G_PICKER+4,$43ed01a0
-        dc.l P_PICKER_ICON,$6100a676    ; bsr.w G_SPRITE
+        dc.l P_PICKER_ICON,PICKER_ICON_BSR      ; bsr.w G_SPRITE
         dc.l P_PICKER_ICON+4,$06400020  ; addi.w #32,d0
         dc.l P_PICKER_PICK,$52402f00    ; addq.w #1,d0 / move.l d0,-(sp)
         dc.l P_PICKER_PICK+4,$43ed01a0  ; lea $1a0(a5),a1
@@ -285,7 +310,11 @@ checks: dc.l P_CROSSES,$4ab80004,P_CROSSES+4,$66000034
         dc.l G_PANEL_COUNT,$48e700f0    ; movem.l a0-a3,-(sp)
         dc.l G_CLOCK,$4a2d01db          ; tst.b $1db(a5)
         dc.l G_FRAME_END,$422d01c4      ; clr.b $1c4(a5)
+        ifnd PAL_RELEASE
         dc.l P_FRAME,$6100125a,P_FRAME+4,$61002248
+        else
+        dc.l P_FRAME,$61001242,P_FRAME+4,$6100221c
+        endif
         dc.l P_SPRITE_POS,$70000642,P_SPRITE_POS+4,$002ce14a
         dc.l -1
 
@@ -295,7 +324,7 @@ checks: dc.l P_CROSSES,$4ab80004,P_CROSSES+4,$66000034
 relocated_checks:
         dc.l P_PICKER_FRAME
         dc.w $4eb9                      ; jsr WaitFrame.l
-        dc.l $0138a
+        dc.l G_WAIT_FRAME
         dc.l P_PICKER_DONE
         dc.w $2079                      ; movea.l (descriptor 7).l,a0
         dc.l DESCRIPTOR_7
@@ -389,7 +418,9 @@ init:
         SETADDR g_load_style,hunk0,G_LOAD_STYLE
         SETADDR g_select_level,hunk0,G_SELECT_LEVEL
         SETADDR g_count,hunk0,G_COUNT
+        ifnd PAL_RELEASE
         SETADDR g_protection,hunk0,G_PROTECTION
+        endif
         SETADDR g_copper,hunk0,G_COPPER
         SETADDR g_fade,hunk0,G_FADE
         SETADDR g_unpack_menu,hunk0,G_UNPACK_MENU
@@ -409,6 +440,9 @@ init:
         SETADDR font_widths,hunk0,FONT_WIDTHS
         SETADDR r_crosses_done,hunk0,R_CROSSES_DONE
         SETADDR r_title_again,hunk0,R_TITLE_AGAIN
+        ifd PAL_RELEASE
+        SETADDR r_next_column,hunk0,R_NEXT_COLUMN
+        endif
         SETADDR level_header,hunk0,HEADER
         SETADDR style_table,hunk0,STYLE_NAMES
         SETADDR pal_black,hunk1,PAL_BLACK
@@ -452,7 +486,14 @@ init:
         bsr load_tile_defaults
 
         PATCH P_CROSSES,$4ef9,hook_crosses      ; jmp
+        ifnd PAL_RELEASE
         PATCH P_QUIT,$4ef9,hook_quit            ; jmp
+        else
+        movea.l hunk0,a1                ; jmp hook_quit_column, no NOP: the
+        adda.l #P_QUIT,a1               ; next column's test follows at once
+        move.w #$4ef9,(a1)+
+        move.l #hook_quit_column,(a1)
+        endif
         PATCH P_COUNT,$4eb9,hook_count          ; jsr
         PATCH P_PLAY_END,$4ef9,hook_play_end    ; jmp
         PATCH P_ESCAPE,$4ef9,hook_escape        ; jmp
@@ -496,6 +537,16 @@ hook_crosses:
         bsr draw_edit_label
         movem.l (sp)+,d0-d7/a0-a4
         GJUMP crosses_done
+
+        ifd PAL_RELEASE
+; Jumped to from P_QUIT in the title's click tests: in the PAL release the
+; QUIT button's column leads back to the title loop, as there is no QUIT;
+; here it is the EDIT button. Other columns go on to the next test.
+hook_quit_column:
+        cmp.w #QUIT_RIGHT,d0
+        blt.s hook_quit
+        GJUMP next_column
+        endif
 
 ; Jumped to from P_QUIT: the EDIT button was clicked. The return address of
 ; the title (to StartLemmings2) is on the stack.
@@ -722,7 +773,9 @@ load_selected:
 ; as EnterPracticeMode does ($1616A).
 enter_level:
         move.w d0,play_style
-        GCALL protection
+        ifnd PAL_RELEASE                ; the PAL release checks $B4 when it
+        GCALL protection                ; selects the level
+        endif
         lea record_buffer,a0
         movea.l hunk3,a1
         bsr copy_record
@@ -2464,6 +2517,9 @@ r_opened:       ds.l 1
 font_widths:    ds.l 1
 r_crosses_done: ds.l 1
 r_title_again:  ds.l 1
+        ifd PAL_RELEASE
+r_next_column:  ds.l 1
+        endif
 level_header:   ds.l 1
 style_table:    ds.l 1
 pal_black:      ds.l 1

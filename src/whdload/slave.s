@@ -1,4 +1,4 @@
-; Lemmings 2: The Tribes In-Game Level Editor V1.1
+; Lemmings 2: The Tribes In-Game Level Editor V1.2
 ; Copyright (c) 2026 Timo Heimonen <timo.heimonen@proton.me>
 ; Licensed under the MIT License. See the LICENSE file for details.
 ;
@@ -21,10 +21,16 @@
 ; leaves free gives the game its extra chip pool for the extended sound
 ; effects, as the original disk-2 loader does on an expanded machine.
 ;
-; The game's display calibration leaves the PAL countdown reload at 2, so
-; a game second would pass every three fields; the slave sets the PAL value
-; 49 that the game's own Tab handler uses (a game second every 50 fields),
-; so that the game starts as if Tab had chosen PAL.
+; The slave runs either release of the game (release.i): the US release
+; (SPS 1976) or, assembled with PAL_RELEASE, the PAL release (SPS 0351).
+; The US release's display calibration leaves the PAL countdown reload at
+; 2, so a game second would pass every three fields; the slave sets the
+; PAL value 49 that the game's own Tab handler uses (a game second every 50
+; fields), so that the game starts as if Tab had chosen PAL. The PAL
+; release's calibration sets 50 itself and is left as it is. The PAL
+; release reads the disk-3 protection track once, at the first title; the
+; slave makes that reader return at once, as the long word it would leave
+; at $B4 is already there.
 ;
 ; The editor (data/Editor, assembled from editor.s) is loaded after the
 ; game into ExpMem, relocated there and initialized once; it checks and
@@ -37,6 +43,7 @@
 
         include "whdload_api.i"
         include "version.i"             ; EDITOR_VERSION
+        include "release.i"             ; GAME
 
         ifnd EXE_SIZE
         fail "EXE_SIZE (length of the unpacked main program) must be defined"
@@ -57,22 +64,26 @@ EDITOR          equ $80000              ; the editor, code and BSS
 EDITOR_MAX      equ $40000
 HUNKS           equ 4
 
-; Hunk 0 offsets
-SELECT_DISK     equ $11796              ; select logical disk D0 (0..2)
-DISK_OP         equ $11b98              ; private OFS operation D0
-KEY_STORE       equ $00e2e              ; keyboard interrupt: store raw key, ack
+; Hunk 0 offsets: US, PAL
+        GAME SELECT_DISK,$11796,$11500          ; select logical disk D0 (0..2)
+        GAME DISK_OP,$11b98,$118f0              ; private OFS operation D0
+        GAME KEY_STORE,$00e2e,$00e1e            ; keyboard interrupt: store raw key, ack
+        GAME POSITIONS,$16a64,$16782            ; read the saved positions (LOAD, SAVE)
+        GAME POSITIONS_READ,$16aea,$16800       ; where Ready leads: the file is read
+        GAME MENU_COLOURS,$16722,$16440         ; fade in the menu screen's colours
+        GAME DISK3_TEXT,$16bb4,$16894           ; "Looking for Disk 3" after LOAD, SAVE
+        ifnd PAL_RELEASE
 CALIBRATION     equ $0e550              ; move.w #2,$19a(a5): PAL countdown reload
 PAL_RELOAD      equ 49                  ; what the Tab handler writes for PAL
-POSITIONS       equ $16a64              ; read the saved positions (LOAD, SAVE)
-POSITIONS_READ  equ $16aea              ; where Ready leads: the file is read
-MENU_COLOURS    equ $16722              ; fade in the menu screen's colours
-DISK3_TEXT      equ $16bb4              ; "Looking for Disk 3" after LOAD, SAVE
+        else
+TRACK_READER    equ $01b66              ; reads the disk-3 track; the first title
+        endif
 
 ; Game globals (A5)
 G_DRIVE         equ $1e3                ; drive digit used in "dfN:" names
-G_DISK_STATE    equ $282                ; cleared after a disk change
+        GAME G_DISK_STATE,$282,$280     ; cleared after a disk change
 G_DISK_FLAG     equ $1ea                ; cleared after a disk change
-G_RAW_KEY       equ $2b0
+        GAME G_RAW_KEY,$2b0,$2ae
 
 ERROR_OBJECT_NOT_FOUND equ 205         ; what the game's OFS code returns
 GATE_ADDRESS    equ $b4                 ; where the game's disk-3 check looks
@@ -104,12 +115,14 @@ expmem:
         dc.w 0                          ; ws_kickcrc
         dc.w 0                          ; ws_config
 
-; The long word that the game's disk-3 check (at $1B6E, before PRACTICE,
-; MAP and PLAY) compares with the one at $B4, where the original disk 3
-; leaves it. It is not part of this source: the install tool copies it from
-; the user's own main program, the check's comparison at $1B7C, into this
-; place, GATE_SLOT bytes into the slave. Without it the slave does not
-; start, as the check would read the floppy drive.
+; The long word that the game's disk-3 check (US: at $1B6E, before
+; PRACTICE, MAP and PLAY) compares with the one at $B4, where the original
+; disk 3 leaves it; the PAL release compares its two words, the first when
+; a level is selected ($198E), the second before Practice ($D800). It is
+; not part of this source: the install tool copies it from the user's own
+; main program, the check's comparison at $1B7C (PAL: the words at $199A
+; and $D808), into this place, GATE_SLOT bytes into the slave. Without it
+; the slave does not start, as the check would read the floppy drive.
 gate_value:
         dc.l 0
         ifne gate_value-base-GATE_SLOT
@@ -149,6 +162,7 @@ path_name:
 ; The original bytes at the patch sites, checked before patching: offset,
 ; long word. The CRC16 of the whole file is checked first; these guard the
 ; offsets themselves.
+        ifnd PAL_RELEASE
 checks: dc.l SELECT_DISK,$4ab80004       ; tst.l ($4).w
         dc.l DISK_OP,$48e7fffe           ; movem.l d0-d7/a0-a6,-(sp)
         dc.l KEY_STORE,$1b4002b0         ; move.b d0,$2b0(a5)
@@ -160,6 +174,20 @@ checks: dc.l SELECT_DISK,$4ab80004       ; tst.l ($4).w
         dc.l POSITIONS+4,$660000e8       ; bne.w (the operating system's path)
         dc.l DISK3_TEXT,$610001ea        ; bsr.w (show a message)
         dc.l -1
+        else
+checks: dc.l SELECT_DISK-2,$4e752b7c     ; rts / move.l #(pointer),$21c(a5)
+        dc.l SELECT_DISK+6,$021c3b7c     ; / move.w #$10,$186(a5)
+        dc.l DISK_OP,$48e7fffe           ; movem.l d0-d7/a0-a6,-(sp)
+        dc.l KEY_STORE,$1b4002ae         ; move.b d0,$2ae(a5)
+        dc.l KEY_STORE+4,$13fc0000       ; move.b #0,$bfec01
+        dc.l KEY_STORE+8,$00bfec01
+        dc.l POSITIONS-2,$4e754eb9       ; rts / jsr (show the menu screen).l
+        dc.l POSITIONS+6,$610002f2       ; bsr.w
+        dc.l DISK3_TEXT,$610001d8        ; bsr.w (show a message)
+        dc.l TRACK_READER-2,$4e752b7c    ; rts / move.l #(pointer),$21c(a5)
+        dc.l TRACK_READER+6,$021c3b7c    ; / move.w #$10,$186(a5)
+        dc.l -1
+        endif
 
 
 ;============================================================================
@@ -253,15 +281,23 @@ start:
         move.l a0,(a1)+
         move.l #$4e714e71,(a1)+
         move.w #$4e71,(a1)
+        ifnd PAL_RELEASE
         movea.l a3,a1
         adda.l #CALIBRATION+2,a1
         move.w #PAL_RELOAD,(a1)         ; the immediate of move.w #2,$19a(a5)
+        else
+        movea.l a3,a1
+        adda.l #TRACK_READER,a1
+        move.w #$4e75,(a1)              ; RTS: the long word is at $B4 already
+        endif
         movea.l a3,a1
         adda.l #POSITIONS,a1
-        move.w #$4ef9,(a1)+             ; JMP positions, a NOP to the 8-byte end
+        move.w #$4ef9,(a1)+             ; JMP positions
         lea positions(pc),a0
         move.l a0,(a1)+
-        move.w #$4e71,(a1)
+        ifnd PAL_RELEASE
+        move.w #$4e71,(a1)              ; a NOP to the 8-byte end
+        endif
         ; Afterwards the game would say "Looking for Disk 3...." while it
         ; selects disk 3 and loads the tribe's style; the selection stays.
         movea.l a3,a1
