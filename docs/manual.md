@@ -119,14 +119,14 @@ and the **editor bar** below it:
 Terrain Objects Param Test          Undo Redo Save Menu
 (the tools of the mode)
 (the status: what is under the pointer)              Unsaved
-(help: the button under the pointer and its key, or a message)   V1.0 by Timo Heimonen
+(help: the button under the pointer and its key, or a message)   V1.1 by Timo Heimonen
 ```
 
 The active mode and the tools that are on are lit; a button that does
 nothing at the moment is dark; "Unsaved" shows that the level has changes
 that are not saved. Hold the pointer over a button to see what it does
 and its key. The editor's version is at the right end of the help line,
-in blue, when the help leaves room for it (shortened to "V1.0 by Timo
+in blue, when the help leaves room for it (shortened to "V1.1 by Timo
 H." when only that fits); the help always comes first.
 
 **Scrolling**: move the pointer to the left, right or top edge of the
@@ -159,6 +159,12 @@ the brush's tiles.
 | W - + | - and + (or =) | Fewer or more copies side by side, for objects that repeat |
 | H - + | [ and ] | Fewer or more copies one under another |
 | < > | , and . | Select the previous or next object in placement order |
+
+The chosen type follows the pointer where no object is, and the object
+page shows every type: both play their animations at the game's speed
+(water and fires flow, an entrance opens, a trap springs), so you see what
+each object does. The frame round the pointer's object is its size when
+placed. The level's own objects stay still until you play it.
 
 Click where no object is to place one; click an object to select it, and
 hold the button to move it; while you hold it, the keys wait. The status line names the object under the

@@ -1,4 +1,4 @@
-; Lemmings 2: The Tribes In-Game Level Editor V1.0
+; Lemmings 2: The Tribes In-Game Level Editor V1.1
 ; Copyright (c) 2026 Timo Heimonen <timo.heimonen@proton.me>
 ; Licensed under the MIT License. See the LICENSE file for details.
 ;
@@ -324,6 +324,7 @@ edit_enter:
         clr.w obj_type
         move.w #-1,sel_slot
         move.w #-1,hover_slot
+        clr.w anim_tick
         bsr types_init
 .scan:  bsr objects_apply               ; the objects at their first frame:
         move.b #PAGE_EDIT,edit_page     ; the build ran their update ($118)
@@ -859,6 +860,7 @@ set_mode:
         move.b d0,mode
         sf dragging
         sf stroke
+        clr.w anim_tick                 ; the preview from its first frame
         ; fall through
 
 ; The current mode's widgets in the bar; the Param mode's second row of
