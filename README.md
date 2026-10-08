@@ -182,6 +182,8 @@ Python.
 - The [user's guide](docs/manual.md).
 - The [level file format](docs/editor-lvl-format.md): every byte of the
   `.lvl` files the editor saves.
+- The [architecture](docs/architecture.md): how the slave and the editor
+  fit into the game engine, with diagrams.
 - The changes by version are in [CHANGELOG.md](CHANGELOG.md).
 
 ## Author
