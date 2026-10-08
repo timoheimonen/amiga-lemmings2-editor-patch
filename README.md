@@ -179,8 +179,10 @@ Python.
 
 ## Docs
 
-The [user's guide](docs/manual.md); the changes by version are in
-[CHANGELOG.md](CHANGELOG.md).
+- The [user's guide](docs/manual.md).
+- The [level file format](docs/editor-lvl-format.md): every byte of the
+  `.lvl` files the editor saves.
+- The changes by version are in [CHANGELOG.md](CHANGELOG.md).
 
 ## Author
 
