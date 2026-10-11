@@ -1,4 +1,4 @@
-; Lemmings 2: The Tribes In-Game Level Editor V1.2
+; Lemmings 2: The Tribes In-Game Level Editor V1.2.1
 ; Copyright (c) 2026 Timo Heimonen <timo.heimonen@proton.me>
 ; Licensed under the MIT License. See the LICENSE file for details.
 ;
@@ -351,7 +351,7 @@ types_layout:
 .height:
         move.w d7,d0
         add.w d0,d0
-        move.w d6,2*PAGE_ROWS_MAX(a1,d0.w)      ; page_row_h
+        move.w d6,page_row_h-page_row_y(a1,d0.w)
         move.w #TYPE_GAP,d1
 .next:  addq.w #1,d2
         lea TYPE_SIZE(a0),a0
@@ -366,7 +366,7 @@ types_layout:
         subq.w #1,d7
         add.w d7,d7
         move.w 0(a1,d7.w),d0
-        add.w 2*PAGE_ROWS_MAX(a1,d7.w),d0       ; the bottom of the last row
+        add.w page_row_h-page_row_y(a1,d7.w),d0 ; the bottom of the last row
         add.w #PAGE_TOP,d0
         moveq #0,d1
 .fit:   move.w d0,d2
@@ -752,7 +752,8 @@ free_slot:
 ; What the level's objects are
 
 ; Every place's object: its role, box and what the game numbers or pairs,
-; the pool and links the game will need, and the warnings.
+; the pool and links the game will need, and the warnings. From the
+; record's placements and the style's types alone, not the map.
 objects_scan:
         movem.l d0-d7/a0-a3,-(sp)
         clr.w object_count
@@ -768,7 +769,7 @@ objects_scan:
 .slot:  lea slot_role,a2
         move.b #NO_ROLE,0(a2,d7.w)
         lea slot_kind,a2
-        clr.b 0(a2,d7.w)
+        clr.b 0(a2,d7.w)                ; KIND_NONE
         lea slot_number,a2
         clr.b 0(a2,d7.w)
         lea slot_partner,a2
@@ -786,7 +787,6 @@ objects_scan:
         move.w d1,d6                    ; the type
         bsr expand_slot
         addq.w #1,object_count
-        moveq #0,d0
         move.w part_count,d0
         mulu #COMPONENT_SIZE,d0
         add.l #INSTANCE_SIZE,d0
@@ -955,6 +955,8 @@ first_warning:
 ; The record's placements into the game's list, the play map from the
 ; record, the border cleared and the game's object expansion run; every
 ; cell that changed (or was still to be drawn) is marked for the redraw.
+; Where the placements changed, the caller scans them too (objects_scan):
+; a terrain change leaves them as they are.
 objects_apply:
         movem.l d0-d7/a0-a4,-(sp)
         lea edit_record+R_OBJECTS,a0
@@ -987,7 +989,6 @@ objects_apply:
 .same:  addq.l #4,a0
         dbra d0,.mark
         st G_REDRAW_ALL(a5)
-        bsr objects_scan
         movem.l (sp)+,d0-d7/a0-a4
         rts
 
@@ -996,7 +997,7 @@ objects_apply:
 ; inside the map, and the game's objects are made again; otherwise the old
 ; values stay and the reason is shown. -> Z set when done. Preserves all.
 commit_slot:
-        movem.l d0-d7/a0,-(sp)
+        movem.l d0-d7/a0-a1,-(sp)
         move.w d0,d7
         movem.w d1-d5,new_values
         bsr get_slot
@@ -1017,7 +1018,7 @@ commit_slot:
         st dirty
         st touched
         st fields_changed
-        movem.l (sp)+,d0-d7/a0
+        movem.l (sp)+,d0-d7/a0-a1
         ori #4,ccr
         rts
 .refuse:
@@ -1027,7 +1028,7 @@ commit_slot:
         bsr objects_scan
         moveq #UI_WARN,d0
         bsr set_message
-        movem.l (sp)+,d0-d7/a0
+        movem.l (sp)+,d0-d7/a0-a1
         andi #$fb,ccr
         rts
 
@@ -1117,16 +1118,6 @@ clamp_origin:
 ;============================================================================
 ; The pointer and the objects
 
-; -> D0 x, D1 y: the map pixel under the pointer.
-cursor_map:
-        move.w G_CURSOR_X(a5),d0
-        add.w G_SCROLL_X(a5),d0
-        add.w #VIEW_EDGE,d0
-        move.w G_CURSOR_Y(a5),d1
-        add.w G_SCROLL_Y(a5),d1
-        add.w #VIEW_EDGE,d1
-        rts
-
 ; D0 x, D1 y in the map -> D0 the object there, the last placed first, or
 ; -1. Preserves the other registers.
 object_at:
@@ -1211,7 +1202,6 @@ select_slot:
 
 objects_input:
         bsr widget_at
-        move.w d0,hover
         move.w #-1,hover_slot
         cmp.w #SCREEN_ROWS,G_CURSOR_Y(a5)
         bhs .keys
@@ -1240,70 +1230,63 @@ objects_input:
         move.w hover,d0
         bpl widget_click
         rts
-.held:  tst.b G_LEFT_DOWN(a5)           ; a held -/+ button repeats
-        beq .right
-        move.w hover,d0
-        cmp.w held_widget,d0
-        bne .right
-        bsr repeat_button
-        bne .right
-        addq.w #1,held_passes
-        cmp.w #HOLD_PASSES,held_passes
-        blo .done
-        bra widget_click
-.right: tst.b G_RIGHT_CLICK(a5)
+.held:  bsr held_repeat
+        tst.b G_RIGHT_CLICK(a5)
         beq .done
         move.w hover_slot,d0
         bpl delete_slot
 .done:  rts
 
-; D0 a widget -> Z set when it is one of the four -/+ buttons.
+; A -/+ button of the Objects or the Param mode held since the click
+; repeats: its click again on every pass after HOLD_PASSES.
+held_repeat:
+        tst.b G_LEFT_DOWN(a5)
+        beq.s .done
+        move.w hover,d0
+        cmp.w held_widget,d0
+        bne.s .done
+        bsr.s repeat_button
+        bne.s .done
+        addq.w #1,held_passes
+        cmp.w #HOLD_PASSES,held_passes
+        bhs widget_click
+.done:  rts
+
+; D0 a widget -> Z set when it is a -/+ button that repeats.
 repeat_button:
         cmp.w #ID_WIDE_LESS,d0
-        blo .no
+        blo.s .no
         cmp.w #ID_HIGH_MORE,d0
-        bhi .no
-        ori #4,ccr
+        bls.s .yes
+        cmp.w #ID_COUNT_LESS,d0
+        beq.s .yes
+        cmp.w #ID_COUNT_MORE,d0
+        beq.s .yes
+        cmp.w #ID_TIME_LESS,d0
+        blo.s .no
+        cmp.w #ID_LOST_MORE,d0
+        bhi.s .no
+.yes:   ori #4,ccr
         rts
 .no:    andi #$fb,ccr
         rts
 
 ; D0 a key in the Objects mode (edit_key has taken the common ones).
 objects_key:
-        moveq #ID_TYPES,d1
-        cmp.b #'p',d0
-        beq .widget
-        moveq #ID_DELETE,d1
-        cmp.b #$7f,d0                   ; Del
-        beq .widget
-        moveq #ID_WIDE_LESS,d1
-        cmp.b #'-',d0
-        beq .widget
-        moveq #ID_WIDE_MORE,d1
-        cmp.b #'=',d0
-        beq .widget
-        cmp.b #'+',d0
-        beq .widget
-        moveq #ID_HIGH_LESS,d1
-        cmp.b #'[',d0
-        beq .widget
-        moveq #ID_HIGH_MORE,d1
-        cmp.b #']',d0
-        beq .widget
-        moveq #ID_PREVIOUS,d1
-        cmp.b #',',d0
-        beq .widget
-        moveq #ID_NEXT,d1
-        cmp.b #'.',d0
-        beq .widget
-        rts
-.widget:
-        move.w d1,d0                    ; as its button, unless disabled
-        bsr widget_state
-        cmp.w #ST_DISABLED,d5
-        beq .done
-        bra widget_action
-.done:  rts
+        lea objects_keys(pc),a0
+        bra key_button
+
+objects_keys:                           ; key, button
+        dc.w 'p',ID_TYPES
+        dc.w $7f,ID_DELETE
+        dc.w '-',ID_WIDE_LESS
+        dc.w '=',ID_WIDE_MORE
+        dc.w '+',ID_WIDE_MORE
+        dc.w '[',ID_HIGH_LESS
+        dc.w ']',ID_HIGH_MORE
+        dc.w ',',ID_PREVIOUS
+        dc.w '.',ID_NEXT
+        dc.w 0
 
 ; A click in the map: the object there is selected and follows the pointer
 ; while the button is held; elsewhere an object of the chosen type is
@@ -1411,12 +1394,7 @@ delete_slot:
         moveq #-1,d3
         moveq #-1,d4
         moveq #-1,d5
-        bsr commit_slot
-        sf dragging
-        cmp.w sel_slot,d7
-        bne .message
-        move.w #-1,sel_slot
-.message:
+        bsr commit_slot                 ; the place unselected (objects_scan)
         lea message_text,a3
         lea s_deleted(pc),a0
         bsr put_str
@@ -1950,15 +1928,8 @@ objects_help:
         bne set_help
         bsr first_warning
         beq .actions
-        lea help_build,a3
-        move.l a0,-(sp)
-        lea s_warning(pc),a0
-        bsr put_str
-        movea.l (sp)+,a0
-        bsr put_str
-        lea help_build,a0
-        moveq #UI_WARN,d0
-        bra set_help
+        lea s_warning(pc),a1
+        bra warning_help
 .actions:
         lea s_objects_help(pc),a0
         moveq #UI_DIM,d0
@@ -2064,21 +2035,16 @@ open_types:
         beq .none
         sf dragging
         clr.w anim_tick                 ; every type from its first frame
-        move.b #PAGE_TYPES,edit_page
+        moveq #PAGE_TYPES,d0
         lea types_widgets(pc),a0
-        move.l a0,widgets
-        move.w #-1,hover
-        st bar_redraw
-        rts
+        bra page_open
 .none:  lea s_no_types(pc),a0
         moveq #UI_ERROR,d0
         bra set_message
 
 close_types:
-        move.b #PAGE_EDIT,edit_page
         clr.w anim_tick                 ; the preview from its first frame
-        bsr mode_widgets
-        rts
+        bra mode_widgets
 
 types_up:
         move.w page_top,d0
@@ -2116,7 +2082,6 @@ types_pass:
 
 types_input:
         bsr widget_at
-        move.w d0,hover
         move.w key,d0
         cmp.b #KEY_ESC,d0
         beq close_types
@@ -2301,6 +2266,9 @@ role_names:
 warning_texts:
         dc.l w_no_entrance,w_entrances,w_no_exit,w_teleporter,w_switch
         dc.l w_links,w_pool
+        ifne *-warning_texts-4*WARNING_COUNT
+        fail "warning_texts must have a text for each warning"
+        endif
 repeat_texts:
         dc.l s_repeats_across,s_repeats_down,s_repeats_both
 
@@ -2373,7 +2341,6 @@ s_objects_count: dc.b "Objects ",0
 s_of_64:        dc.b " of 64",0
 s_object:       dc.b "Object ",0
 s_type:         dc.b "Type ",0
-s_of:           dc.b " of ",0
 s_type_of:      dc.b "  Type ",0
 s_not_used:     dc.b ", not used",0
 s_toggles:      dc.b ", toggles ",0

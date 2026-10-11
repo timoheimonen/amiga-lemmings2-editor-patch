@@ -1,4 +1,4 @@
-; Lemmings 2: The Tribes In-Game Level Editor V1.2
+; Lemmings 2: The Tribes In-Game Level Editor V1.2.1
 ; Copyright (c) 2026 Timo Heimonen <timo.heimonen@proton.me>
 ; Licensed under the MIT License. See the LICENSE file for details.
 ;
@@ -140,7 +140,6 @@ SHEET_VIEW      equ SCREEN_ROWS>>CELL_SHIFT_Y
 MAX_PIECES      equ 256
 NO_PIECE        equ $ff
 TILE_DEFAULTS   equ 1024            ; per style: a byte for each tile index
-STYLE_COUNT     equ 12
 
 ; Widget ids
 ID_TERRAIN      equ 1
@@ -220,7 +219,7 @@ COMMON_ROW macro                    ; the modes and the common buttons
         WIDGET 200,ROW_A,28,ID_UNDO,s_undo,h_undo
         WIDGET 230,ROW_A,28,ID_REDO,s_redo,h_redo
         WIDGET 260,ROW_A,28,ID_SAVE,s_save,h_save
-        WIDGET 290,ROW_A,28,ID_MENU,s_menu,h_menu
+        WIDGET 290,ROW_A,28,ID_MENU,s_menu,h_levels
         endm
 
         section editor,code
@@ -327,7 +326,7 @@ edit_enter:
         clr.w anim_tick
         bsr types_init
 .scan:  bsr objects_apply               ; the objects at their first frame:
-        move.b #PAGE_EDIT,edit_page     ; the build ran their update ($118)
+        bsr objects_scan                ; the build ran their update ($118)
         bsr mode_widgets
         move.w #-1,pointer_shape
         tst.b ask_on_entry              ; Levels on test play's result page
@@ -406,14 +405,23 @@ edit_loop:
 ; Leaving: the view fades out as play does, the game's copper list and
 ; frame interrupt are put back, then the list.
 edit_exit:
-        bsr view_fade_out
-        bsr bar_hide
-        move.l g_idle,G_CALLBACK(a5)
+        bsr view_leave
         GCALL music_off
-        move.w #MENU_MAX_Y,G_CURSOR_MAX_Y(a5)
         sf editing
         clr.b screen
         bra list_flow
+
+; The view left as play leaves it: the colours and the bar faded to
+; black, the game's copper list and frame interrupt back, the scroll kept
+; for the way back (resuming).
+view_leave:
+        move.w G_SCROLL_X(a5),resume_x
+        move.w G_SCROLL_Y(a5),resume_y
+        bsr.s view_fade_out
+        bsr bar_hide
+        move.l g_idle,G_CALLBACK(a5)
+        move.w #MENU_MAX_Y,G_CURSOR_MAX_Y(a5)
+        rts
 
 ; The play colours and the bar faded to black, as play fades out.
 view_fade_out:
@@ -689,7 +697,6 @@ update_pointer:
 .map:   cmp.w pointer_shape,d0
         beq.s .done
         move.w d0,pointer_shape
-        tst.w d0
         bne.s .arrow
         move.l ptr_cross,G_POINTER_DATA(a5)
         move.w #16,G_POINTER_H(a5)
@@ -702,7 +709,6 @@ update_pointer:
 ; Mouse and keys in the edit view.
 edit_input:
         bsr widget_at
-        move.w d0,hover
         move.w key,d0
         beq.s .mouse
         bsr edit_key
@@ -789,7 +795,7 @@ widget_action:
         cmp.w #ID_Q_DISCARD,d0
         beq leave_now
         cmp.w #ID_Q_CANCEL,d0
-        beq close_question
+        beq mode_widgets
         cmp.w #ID_TYPES,d0
         beq open_types
         cmp.w #ID_DELETE,d0
@@ -863,19 +869,30 @@ set_mode:
         clr.w anim_tick                 ; the preview from its first frame
         ; fall through
 
-; The current mode's widgets in the bar; the Param mode's second row of
-; tools takes the status line's place.
+; The edit page with the current mode's widgets in the bar; the Param
+; mode's second row of tools takes the status line's place.
 mode_widgets:
+        move.b #PAGE_EDIT,edit_page
         lea edit_widgets(pc),a0
         sf status_hidden
         move.b mode,d0
-        beq.s .table
+        beq.s show_widgets
         lea objects_widgets(pc),a0
         cmp.b #MODE_OBJECTS,d0
-        beq.s .table
+        beq.s show_widgets
         lea level_widgets(pc),a0
         st status_hidden
-.table: move.l a0,widgets
+        bra.s show_widgets
+
+; D0 a page, A0 its widgets: the page in the bar, with its status line.
+page_open:
+        move.b d0,edit_page
+        sf status_hidden
+        ; fall through
+
+; A0 widgets: the bar's table, none under the pointer, all drawn again.
+show_widgets:
+        move.l a0,widgets
         move.w #-1,hover
         st bar_redraw
 mode_same:
@@ -884,12 +901,10 @@ mode_same:
 toggle_erase:
         not.b erase
         sf pick
-        st fields_changed
         rts
 
 toggle_pick:
         not.b pick
-        st fields_changed
         rts
 
 toggle_decor:
@@ -917,15 +932,20 @@ bar_sound:
 ;----------------------------------------------------------------------------
 ; The terrain tools
 
-; D0, D1: the map cell under the cursor.
-cursor_cell:
+; -> D0 x, D1 y: the map pixel under the pointer.
+cursor_map:
         move.w G_CURSOR_X(a5),d0
         add.w G_SCROLL_X(a5),d0
         add.w #VIEW_EDGE,d0
-        lsr.w #CELL_SHIFT_X,d0
         move.w G_CURSOR_Y(a5),d1
         add.w G_SCROLL_Y(a5),d1
         add.w #VIEW_EDGE,d1
+        rts
+
+; D0, D1: the map cell under the cursor.
+cursor_cell:
+        bsr.s cursor_map
+        lsr.w #CELL_SHIFT_X,d0
         lsr.w #CELL_SHIFT_Y,d1
         rts
 
@@ -976,7 +996,6 @@ put_cell:
         st dirty
         st touched                      ; a step for undo (undo.s)
         st cells_changed
-        addq.w #1,cells_written
 .out:   movem.l (sp)+,d0-d4/a0
         rts
 
@@ -1068,7 +1087,6 @@ map_stroke:
 ; Pick: the tile under the cursor, with its two flags, becomes the brush.
 pick_cell:
         sf pick
-        st fields_changed
         bsr cursor_cell
         bsr cell_editable
         bne.s .nothing
@@ -1225,14 +1243,17 @@ tile_data:
         adda.l d2,a0
         rts
 
-; A0 a tile, A1 its place in a display buffer.
+; A0 a tile, A1 its place in a display buffer. Changes D0/A0/A1.
 copy_tile:
         moveq #3,d0
-.plane: movea.l a1,a2
-        moveq #7,d1
-.row:   move.w (a0)+,(a2)
-        lea VIEW_ROW(a2),a2
-        dbra d1,.row
+.plane: move.w (a0)+,(a1)               ; its eight rows
+        move.w (a0)+,VIEW_ROW(a1)
+        move.w (a0)+,2*VIEW_ROW(a1)
+        move.w (a0)+,3*VIEW_ROW(a1)
+        move.w (a0)+,4*VIEW_ROW(a1)
+        move.w (a0)+,5*VIEW_ROW(a1)
+        move.w (a0)+,6*VIEW_ROW(a1)
+        move.w (a0)+,7*VIEW_ROW(a1)
         lea VIEW_PLANE(a1),a1
         dbra d0,.plane
         rts
@@ -1245,59 +1266,7 @@ frame_cells:
         sub.w G_SCROLL_Y(a5),d1
         lsl.w #CELL_SHIFT_X,d2
         lsl.w #CELL_SHIFT_Y,d3
-        ; fall through
-
-; A frame in the back buffer: D0 x (a multiple of 16), D1 y, D2 width (a
-; multiple of 16), D3 height in pixels, clipped to the buffer.
-solid_frame:
-        movem.l d0-d7/a0-a2,-(sp)
-        movea.l G_BACK(a5),a0
-        asr.w #4,d0                     ; first word
-        asr.w #4,d2
-        add.w d0,d2
-        subq.w #1,d2                    ; last word
-        move.w d1,d4
-        move.w d1,d5
-        add.w d3,d5
-        subq.w #1,d5                    ; last row
-        ; top and bottom rows
-        move.w d4,d6
-        bsr.s .line
-        move.w d5,d6
-        bsr.s .line
-        ; the left and right columns between them
-        move.w d4,d6
-        subq.w #1,d5
-.column:
-        addq.w #1,d6
-        cmp.w d5,d6
-        bgt.s .out
-        tst.w d6
-        bmi.s .below
-        cmp.w #VIEW_ROWS,d6
-        bhs.s .out
-        move.w d0,d7
-        move.w #$8000,d3
-        bsr.s frame_bits
-        move.w d2,d7
-        moveq #1,d3
-        bsr.s frame_bits
-.below: bra.s .column
-.out:   movem.l (sp)+,d0-d7/a0-a2
-        rts
-.line:  tst.w d6                        ; row D6, words D0..D2
-        bmi.s .line_out
-        cmp.w #VIEW_ROWS,d6
-        bhs.s .line_out
-        move.w d0,d7
-.word:  cmp.w d2,d7
-        bgt.s .line_out
-        move.w #$ffff,d3
-        bsr.s frame_bits
-        addq.w #1,d7
-        bra.s .word
-.line_out:
-        rts
+        bra outline_box
 
 ; Word D7 of row D6 in the buffer at A0: the pixels D3 in the frame
 ; colours (frame_word), when it is in the buffer. Changes D1 and A1.
@@ -1432,12 +1401,12 @@ colour_luminance:
         add.w d0,d1
         rts
 
-; A dotted frame inside the rectangle solid_frame takes (the same
-; registers), every other pixel and row: so that it stays apart from a
-; frame where the two meet (the scroll limits round the start view), with
-; a pixel of what is beneath between them, its rows and columns are two
-; pixels in, which the screen still shows (it shows the back buffer's
-; pixels from x 18 to 333).
+; A dotted frame inside a rectangle of the back buffer, D0 x (a multiple
+; of 16), D1 y, D2 width (a multiple of 16), D3 height, every other pixel
+; and row: so that it stays apart from a frame where the two meet (the
+; scroll limits round the start view), with a pixel of what is beneath
+; between them, its rows and columns are two pixels in, which the screen
+; still shows (it shows the back buffer's pixels from x 18 to 333).
 dotted_frame:
         movem.l d0-d7/a0-a2,-(sp)
         movea.l G_BACK(a5),a0
@@ -1510,19 +1479,15 @@ save_level:
         lea message_text,a3
         bsr first_warning
         bne.s .warning
-        lea s_saved(pc),a0
-        bsr put_str
+        lea s_saved(pc),a1
         lea edit_path,a0
-        bsr put_str
+        bsr put_pair
         lea message_text,a0
         moveq #UI_OK,d0
         bra set_message
 .warning:                               ; saved all the same
-        move.l a0,-(sp)
-        lea s_saved_warning(pc),a0
-        bsr put_str
-        movea.l (sp)+,a0
-        bsr put_str
+        lea s_saved_warning(pc),a1
+        bsr put_pair
         lea message_text,a0
         moveq #UI_WARN,d0
         bra set_message
@@ -1548,22 +1513,13 @@ leave_now:
         st leaving
         rts
 
-close_question:
-        move.b #PAGE_EDIT,edit_page
-        bra mode_widgets
-
 ; A0 a question's widgets: the bar asks it (question_text).
 question_open:
-        move.b #PAGE_QUESTION,edit_page
-        move.l a0,widgets
-        sf status_hidden
-        move.w #-1,hover
-        st bar_redraw
-        rts
+        moveq #PAGE_QUESTION,d0
+        bra page_open
 
 question_input:
         bsr widget_at
-        move.w d0,hover
         move.w key,d0
         cmp.b #KEY_RETURN,d0            ; the default answer
         bne.s .esc
@@ -1572,7 +1528,7 @@ question_input:
         bra save_and_leave
 .esc:
         cmp.b #KEY_ESC,d0
-        beq close_question
+        beq mode_widgets
         cmp.b #'d',d0                   ; Discard
         bne.s .click
         tst.b question_kind
@@ -1612,15 +1568,8 @@ edit_help:
         bne.s .button
         bsr first_warning               ; Save names a warning
         beq.s .button
-        lea help_build,a3
-        move.l a0,-(sp)
-        lea s_save_warning(pc),a0
-        bsr put_str
-        movea.l (sp)+,a0
-        bsr put_str
-        lea help_build,a0
-        moveq #UI_WARN,d0
-        bra set_help
+        lea s_save_warning(pc),a1
+        bra warning_help
 .button:
         move.w hover,d0
         bsr widget_find
@@ -1671,6 +1620,15 @@ edit_help:
         beq.s .show
         lea s_pick_help(pc),a0
 .show:  moveq #UI_DIM,d0
+        bra set_help
+
+; A0 a warning and A1 its prefix: the two as the help line, in the
+; warning colour.
+warning_help:
+        lea help_build,a3
+        bsr put_pair
+        lea help_build,a0
+        moveq #UI_WARN,d0
         bra set_help
 
 ; The status line: the cell under the pointer, else the level's title.
@@ -1752,7 +1710,7 @@ put_cell_info:
 ;----------------------------------------------------------------------------
 ; Widget states and texts
 
-; D0 a widget id -> D5 its state. Preserves all other registers.
+; D0 a widget id -> D5 its state. Changes A0.
 widget_state:
         move.l d1,-(sp)
         moveq #ST_NORMAL,d5
@@ -1885,7 +1843,7 @@ widget_text:
         bls.s .last
         move.w sheet_rows,d0
 .last:  bsr put_number
-        lea s_of_text(pc),a0
+        lea s_of(pc),a0
         bsr put_str
         move.w sheet_rows,d0
         bsr put_number
@@ -2014,18 +1972,14 @@ sheet_place:
 open_pieces:
         tst.w piece_count
         beq.s .none
-        move.b #PAGE_PIECES,edit_page
+        moveq #PAGE_PIECES,d0
         lea pieces_widgets(pc),a0
-        move.l a0,widgets
-        move.w #-1,hover
-        st bar_redraw
-        rts
+        bra page_open
 .none:  lea s_no_pieces(pc),a0
         moveq #UI_ERROR,d0
         bra set_message
 
 close_pieces:
-        move.b #PAGE_EDIT,edit_page
         sf stroke                       ; the press that took a piece
         bra mode_widgets
 
@@ -2077,8 +2031,8 @@ sheet_scroll:
 
 ; The visible rows of the sheet into the back buffer.
 sheet_draw:
-        movea.l G_BACK(a5),a1
-        lea VIEW_EDGE*VIEW_ROW+VIEW_EDGE/8(a1),a1
+        movea.l G_BACK(a5),a4
+        lea VIEW_EDGE*VIEW_ROW+VIEW_EDGE/8(a4),a4
         move.w sheet_top,d6
         moveq #SHEET_VIEW-1,d7
 .row:   move.w d6,d4
@@ -2086,19 +2040,16 @@ sheet_draw:
         lea sheet_tile,a3
         adda.l d4,a3
         moveq #SHEET_COLS-1,d5
-        movea.l a1,a4
 .cell:  moveq #0,d2
         cmp.w sheet_rows,d6
         bhs.s .blank
         move.w (a3)+,d2
-.blank: movem.l a1/d5,-(sp)
-        movea.l a4,a1
+.blank: movea.l a4,a1
         bsr tile_data
         bsr copy_tile
-        movem.l (sp)+,a1/d5
         addq.l #2,a4
         dbra d5,.cell
-        lea 8*VIEW_ROW(a1),a1
+        lea 8*VIEW_ROW-SHEET_COLS*2(a4),a4  ; the next row of cells
         addq.w #1,d6
         dbra d7,.row
         rts
@@ -2131,7 +2082,6 @@ sheet_hit:
 
 pieces_input:
         bsr widget_at
-        move.w d0,hover
         move.w key,d0
         cmp.b #KEY_ESC,d0
         beq close_pieces
@@ -2184,7 +2134,7 @@ sheet_frame:
         moveq #0,d3
         move.b 3(a0),d3
         lsl.w #CELL_SHIFT_Y,d3
-        bra solid_frame
+        bra outline_box
 .done:  rts
 
 ; The piece under the cursor.
@@ -2197,7 +2147,6 @@ pieces_status:
         move.w d2,d5
         lea s_piece(pc),a0
         bsr put_str
-        move.w d4,d0
         bsr put_number
         lsl.w #2,d4
         lea piece_table,a0
@@ -2271,7 +2220,6 @@ s_cancel:       dc.b "Cancel",0
 s_unsaved:      dc.b "Unsaved",0
 h_terrain:      dc.b "Terrain: draw the level's ground (T)",0
 h_save:         dc.b "Save the level to its file (S)",0
-h_menu:         dc.b "Back to the list of levels (Esc)",0
 h_pieces:       dc.b "Choose a terrain piece or tile (P)",0
 h_erase:        dc.b "Erase with the brush's shape (R, right click)",0
 h_pick:         dc.b "Take a tile from the level as the brush (K)",0
@@ -2312,7 +2260,7 @@ s_empty:        dc.b 0
 
 edit_record:    ds.b RECORD_SIZE        ; the level being edited
 edit_path:      ds.b 64                 ; its file
-tile_defaults:  ds.b STYLE_COUNT*TILE_DEFAULTS ; bit 0 Decor, bit 1 Steel
+tile_defaults:  ds.b STYLES*TILE_DEFAULTS ; bit 0 Decor, bit 1 Steel
 black:          ds.w 64
 piece_table:    ds.l MAX_PIECES
 sheet_tile:     ds.w SHEET_COLS*SHEET_MAX_ROWS

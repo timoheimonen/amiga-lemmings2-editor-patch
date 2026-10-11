@@ -50,7 +50,8 @@ renamed or deleted, but not played or edited. A level file made elsewhere
 is damaged too when it holds something the game cannot take: a skill the
 game does not have, a start view or scroll limits outside the map, or an
 object of a type the style does not have, far outside the map, off the
-grid of 16x8-pixel cells or with more than 40 copies.
+grid of 16x8-pixel cells, drawn partly left of or above the map, or with
+more than 40 copies.
 
 | Button | Key | What it does |
 | --- | --- | --- |
@@ -119,14 +120,14 @@ and the **editor bar** below it:
 Terrain Objects Param Test          Undo Redo Save Menu
 (the tools of the mode)
 (the status: what is under the pointer)              Unsaved
-(help: the button under the pointer and its key, or a message)   V1.2 by Timo Heimonen
+(help: the button under the pointer and its key, or a message) V1.2.1 by Timo Heimonen
 ```
 
 The active mode and the tools that are on are lit; a button that does
 nothing at the moment is dark; "Unsaved" shows that the level has changes
 that are not saved. Hold the pointer over a button to see what it does
 and its key. The editor's version is at the right end of the help line,
-in blue, when the help leaves room for it (shortened to "V1.2 by Timo
+in blue, when the help leaves room for it (shortened to "V1.2.1 by Timo
 H." when only that fits); the help always comes first.
 
 **Scrolling**: move the pointer to the left, right or top edge of the

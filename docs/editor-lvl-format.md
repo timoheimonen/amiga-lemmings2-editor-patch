@@ -2,17 +2,20 @@
 
 08.10.2026 Timo Heimonen (timo.heimonen@proton.me)
 
+Format version 1
+
 This document describes the `.lvl` files of the in-game level editor for
-Amiga Lemmings 2: The Tribes. A level file holds one level: exactly 8648
-bytes, an IFF-style `FORM` of type `L2LV` with four chunks and no
-checksum. The format is the game's own level record, the one it keeps
-for its own levels, so the game fixes it: it has no version and does not
-change, the file holds no version field, and every version of the editor
-reads and writes the same format. The document gives every byte of the
-file: the fields, what the editor writes there, the values the game takes
-and what each value does in the game. "The editor" below is that level
-editor, and "the original levels" are the game's own 124 levels (120
-tribe levels and 4 Practice levels).
+Amiga Lemmings 2: The Tribes, format version 1. A level file holds one
+level: exactly 8648 bytes, an IFF-style `FORM` of type `L2LV` with four
+chunks and no checksum. The format is the game's own level record, the
+one it keeps for its own levels, so the game fixes it, and the file holds
+no version field. The format's version is its own, not the editor's:
+every version of the editor reads and writes format version 1, and the
+version changes only if the format does. The document gives every byte
+of the file: the fields, what the editor writes there, the values the
+game takes and what each value does in the game. "The editor" below is
+that level editor, and "the original levels" are the game's own 124
+levels (120 tribe levels and 4 Practice levels).
 
 Some of what a level needs is not in the file: the number of lemmings (a
 tribe's first level, and every level the editor plays, has 60), and the
@@ -55,8 +58,8 @@ editor lists a file whose tags or sizes differ as damaged.
 
 What the editor writes into the fields is the editor's behavior, not
 part of the format. This section, the "The editor writes" columns and the
-other notes on the editor below describe editor versions 1.0 to 1.2; a
-later version that writes otherwise changes only them.
+other notes on the editor below describe it; a version of the editor that
+writes otherwise changes only them, not the format's version.
 
 The editor saves the level it edits as one 8648-byte file in the layout
 above. It changes only what is edited and keeps every other byte of the
@@ -355,7 +358,8 @@ packed original levels of the Classic and Beach tribes, and the game then
 stops when it next starts one of those levels; above the map it lands
 wherever a word of the game's code points. Every original level keeps
 this; its origins with a negative *x* (-16 and -32) are types whose
-offset brings their cells into the map.
+offset brings their cells into the map. The editor's placements keep it,
+and it lists a file that breaks it as damaged.
 
 **Below the map.** A part written past the map's last row goes on in the
 1971 cells and past them into the game's other data, without clipping.
@@ -830,9 +834,10 @@ other byte of a title from elsewhere as a space when it edits the title.
   style is not 0..11 or the shape 0..6, a skill ID is over 51, the start
   view and the scroll limits break the rule in
   [scrolling](#the-start-view-and-the-scroll-limits), a placement's type is
-  neither `-1` nor one the style has, its repeats are over 40, or its
-  origin is more than 512 pixels outside the map or off the 16 x 8 cell
-  grid.
+  neither `-1` nor one the style has, its repeats are over 40, its origin
+  is more than 512 pixels outside the map or off the 16 x 8 cell grid, or
+  the origin plus its type's offset is below 0 on either axis (left of
+  or above the map, in [the objects' chunk](#objects-l2bo-1f4821c7)).
 - A tool that rewrites a level should keep every byte it does not change,
   the unused ones too, and the order of the placements.
 

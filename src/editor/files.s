@@ -1,4 +1,4 @@
-; Lemmings 2: The Tribes In-Game Level Editor V1.2
+; Lemmings 2: The Tribes In-Game Level Editor V1.2.1
 ; Copyright (c) 2026 Timo Heimonen <timo.heimonen@proton.me>
 ; Licensed under the MIT License. See the LICENSE file for details.
 ;
@@ -44,12 +44,8 @@ SCREEN_RENAME   equ 7
 
 ; The Delete page for the selected file. -> A0 a message for the list, or 0.
 delete_page:
-        GCALL show_menu
-        bsr txt_start
         lea s_delete_title(pc),a0
-        move.w #TITLE_Y,d1
-        bsr txt_centred_line
-        bsr file_lines
+        bsr file_page
         lea s_delete_warning(pc),a0
         move.w #FILE_LINE_3,d1
         bsr txt_centred_line
@@ -76,13 +72,9 @@ delete_page:
         lea s_not_deleted(pc),a0
         tst.w d0
         bmi.s .listed
-        lea message_build,a3
-        lea s_deleted_file(pc),a0
-        bsr put_str
+        lea s_deleted_file(pc),a1
         lea path+LEVELS_PREFIX,a0
-        bsr put_str
-        clr.b (a3)
-        lea message_build,a0
+        bsr message_join
 .listed:
         move.l a0,-(sp)
         bsr scan_levels
@@ -90,13 +82,20 @@ delete_page:
         movea.l (sp)+,a0
         rts
 
-; The selected entry's name and title, or that it is damaged, as two lines
-; of labels and values (the New page's columns) into the stream at A3.
-file_lines:
+; A page about the selected file: the menu background, the title A0, and
+; the file's name and title, or that it is damaged, as two lines of labels
+; and values (the New page's columns), into the stream at A3.
+file_page:
+        move.l a0,-(sp)
+        GCALL show_menu
+        bsr txt_start
+        movea.l (sp)+,a0
+        move.w #TITLE_Y,d1
+        bsr txt_centred_line
         lea s_name_label(pc),a0
         move.w #FILE_LINE_1,d1
         bsr new_label
-        lea s_title_label(pc),a0
+        lea s_title(pc),a0
         move.w #FILE_LINE_2,d1
         bsr new_label
         move.w #FILE_LINE_1,d1
@@ -109,7 +108,7 @@ file_lines:
         bsr txt_fit
         move.w #FILE_LINE_2,d1
         bsr new_value
-        lea s_damaged_file(pc),a0
+        lea s_damaged(pc),a0
         tst.b E_OK(a2)
         beq txt_str
         lea E_TITLE(a2),a0
@@ -120,7 +119,7 @@ file_lines:
 ; path: the file deleted, its name kept for the list. D0 = 0, or -1 when it
 ; is still there.
 remove_file:
-        movem.l d1-d7/a1-a6,-(sp)
+        movem.l d1/a1-a2,-(sp)
         movea.l resload_base,a2
         lea path,a0
         jsr resload_DeleteFile(a2)
@@ -129,56 +128,50 @@ remove_file:
         jsr resload_GetFileSize(a2)
         tst.l d0
         bne.s .kept
-        lea deleted_names,a3            ; a name kept already: not again (a
-        move.w deleted_count,d7         ; file renamed back and forth)
-        bra.s .test
-.known: lea path+LEVELS_PREFIX,a0
-        movea.l a3,a1
-        bsr compare_names
-        tst.w d0
+        lea path+LEVELS_PREFIX,a0       ; a name kept already: not again (a
+        bsr deleted_find                ; file renamed back and forth)
         beq.s .done
-        lea DELETED_SIZE(a3),a3
-.test:  dbra d7,.known
         cmp.w #DELETED_MAX,deleted_count
         bhs.s .done                     ; listed as damaged until WHDLoad quits
-        movea.l a3,a1                   ; the first free place
-        lea path+LEVELS_PREFIX,a0
-.copy:  move.b (a0)+,(a1)+
+.copy:  move.b (a0)+,(a1)+              ; into the first free place
         bne.s .copy
         addq.w #1,deleted_count
 .done:  moveq #0,d0
         bra.s .out
 .kept:  moveq #-1,d0
-.out:   movem.l (sp)+,d1-d7/a1-a6
+.out:   movem.l (sp)+,d1/a1-a2
         rts
+
+; A0 a name -> Z set with A1 its place in deleted_names when it is one of
+; them, else Z clear with A1 the first free place. Changes D0/D1.
+deleted_find:
+        lea deleted_names,a1
+        move.w deleted_count,d1
+        bra.s .test
+.name:  bsr compare_names
+        beq.s .done
+        lea DELETED_SIZE(a1),a1
+.test:  dbra d1,.name
+        moveq #1,d0                     ; Z clear
+.done:  rts
 
 ; A4 a listed name -> Z clear when the list leaves it out: deleted in this
 ; session and not there (WHDLoad's write cache). Changes D0/D1/A0/A1.
 name_deleted:
-        move.w deleted_count,d1
-        beq.s .listed
-        lea deleted_names,a1
-        subq.w #1,d1
-.name:  movea.l a4,a0
-        movem.l d1/a1,-(sp)
-        bsr compare_names
-        movem.l (sp)+,d1/a1
-        tst.w d0
+        movea.l a4,a0
+        bsr deleted_find
         beq.s .deleted
-        lea DELETED_SIZE(a1),a1
-        dbra d1,.name
-.listed:
         cmp.b d0,d0                     ; Z set
         rts
 .deleted:
         movea.l a4,a0
         lea path,a1
         bsr levels_path
-        movem.l a2,-(sp)
+        move.l a2,-(sp)
         movea.l resload_base,a2
         lea path,a0
         jsr resload_GetFileSize(a2)
-        movem.l (sp)+,a2
+        movea.l (sp)+,a2
         tst.l d0
         seq d0                          ; no such file: Z clear
         tst.b d0
@@ -211,13 +204,9 @@ rename_page:
 .none:  moveq #0,d1
 .kept:  move.b d1,new_length
         clr.l new_message
-        GCALL show_menu
-        bsr txt_start
         lea s_rename_title(pc),a0
-        move.w #TITLE_Y,d1
-        bsr txt_centred_line
-        bsr file_lines
-        lea s_new_name_label(pc),a0
+        bsr file_page
+        lea s_new_label(pc),a0
         move.w #RENAME_Y,d1
         bsr new_label
         bsr txt_draw
@@ -281,29 +270,15 @@ rename_file:
         move.w selected,d0
         bsr entry_at
         lea E_NAME(a2),a0
+        lea old_path,a1
+        bsr levels_path                 ; the file as it is
+        lea E_NAME(a2),a0
         lea new_file,a1
         bsr compare_names
         lea s_same_name(pc),a0
-        tst.w d0
         beq .refuse                     ; the same, in any case
-        bsr new_entry
-        lea s_name_exists(pc),a0
-        cmp.w entry_count,d7
-        blo .refuse
-        lea new_file,a0                 ; a file the list does not show
-        lea path,a1
-        bsr levels_path
-        movea.l resload_base,a2
-        lea path,a0
-        jsr resload_GetFileSize(a2)
-        lea s_name_exists(pc),a0
-        tst.l d0
+        bsr name_taken                  ; -> path: the new file
         bne .refuse
-        bsr selected_path
-        lea path,a0
-        lea old_path,a1
-.old:   move.b (a0)+,(a1)+
-        bne.s .old
         movea.l resload_base,a2
         lea old_path,a0
         jsr resload_GetFileSize(a2)
@@ -320,10 +295,7 @@ rename_file:
         lea old_path,a0
         lea file_buffer,a1
         jsr resload_LoadFile(a2)
-.write: lea new_file,a0
-        lea path,a1
-        bsr levels_path
-        move.l d7,d0
+.write: move.l d7,d0
         lea path,a0
         lea file_buffer,a1
         jsr resload_SaveFile(a2)
@@ -340,13 +312,9 @@ rename_file:
         lea s_old_kept(pc),a0
         tst.w d0
         bmi.s .listed
-        lea message_build,a3
-        lea s_renamed(pc),a0
-        bsr put_str
+        lea s_renamed(pc),a1
         lea new_file,a0
-        bsr put_str
-        clr.b (a3)
-        lea message_build,a0
+        bsr message_join
 .listed:
         move.l a0,-(sp)
         bsr scan_levels
@@ -375,7 +343,7 @@ selected_path:
 ; A0 a file name -> A1 "Levels/" and the name.
 levels_path:
         move.l a0,-(sp)
-        lea s_levels_dir(pc),a0
+        lea s_levels(pc),a0
 .dir:   move.b (a0)+,(a1)+
         bne.s .dir
         move.b #'/',-1(a1)
@@ -384,19 +352,27 @@ levels_path:
         bne.s .name
         rts
 
-; D7 an entry, or entry_count: it is selected, its page shown.
+; D7 an entry, or entry_count or more: it is selected, or the last one,
+; its page shown; none and the first page when the list is empty.
 select_entry:
         cmp.w entry_count,d7
         blo.s .entry
         move.w entry_count,d7
         subq.w #1,d7
-.entry: move.w d7,selected
-        bmi.s .none
-        moveq #0,d0
+.entry: moveq #0,d0
+        move.w d7,selected
+        bmi.s .page
         move.w d7,d0
         divu #ROWS,d0
-        move.w d0,current_page
-.none:  rts
+.page:  move.w d0,current_page
+        rts
+
+; A1 a text and A0 a file name -> A0 the two as one message (message_build).
+message_join:
+        lea message_build,a3
+        bsr put_pair
+        lea message_build,a0
+        rts
 
 ; After a resload call: the system took the keyboard, so the release of a
 ; key never reached the game, whose key repeat would go on. Clear the
@@ -408,19 +384,16 @@ keys_cleared:
 
 delete_buttons:
         MBUTTON MB_COLUMN_1,MB_ROW_2,KEY_RETURN,s_delete,h_delete_file
-        MBUTTON MB_COLUMN_3,MB_ROW_2,KEY_ESC,s_cancel_label,h_keep_file
+        MBUTTON MB_COLUMN_3,MB_ROW_2,KEY_ESC,s_cancel,h_keep_file
         dc.w -1
 rename_buttons:
         MBUTTON MB_COLUMN_1,MB_ROW_2,KEY_RETURN,s_rename_label,h_rename_file
-        MBUTTON MB_COLUMN_3,MB_ROW_2,KEY_ESC,s_cancel_label,h_keep_name
+        MBUTTON MB_COLUMN_3,MB_ROW_2,KEY_ESC,s_cancel,h_keep_name
         dc.w -1
 
 s_delete_title:   dc.b "Delete Level",0
 s_rename_title:   dc.b "Rename Level",0
 s_rename_label:   dc.b "Rename",0
-s_title_label:    dc.b "Title",0
-s_new_name_label: dc.b "New",0
-s_damaged_file:   dc.b "damaged",0
 s_delete_warning: dc.b "Deleting cannot be undone.",0
 s_delete_help:    dc.b "Return: delete    Esc: keep",0
 s_rename_help:    dc.b "Type the new name of the file",0
