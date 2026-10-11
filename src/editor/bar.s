@@ -1,4 +1,4 @@
-; Lemmings 2: The Tribes In-Game Level Editor V1.2
+; Lemmings 2: The Tribes In-Game Level Editor V1.2.1
 ; Copyright (c) 2026 Timo Heimonen <timo.heimonen@proton.me>
 ; Licensed under the MIT License. See the LICENSE file for details.
 ;
@@ -129,6 +129,18 @@ bar_init:
 
 ; D0 x, D1 y, D2 width, D3 height, D4 colour. Preserves all.
 bar_rect:
+        movem.l a0/a3-a4,-(sp)
+        movea.l bar_bitmap,a0
+        movea.w #BAR_PLANE,a3
+        movea.w #BAR_PLANES-1,a4
+        bsr.s plane_rect
+        movem.l (sp)+,a0/a3-a4
+        rts
+
+; The same in any bitmap of 40-byte rows (the bar, the menu and the title
+; screens): A0 the bitmap, A3 its plane size, A4 its planes - 1. Preserves
+; all.
+plane_rect:
         movem.l d0-d7/a0-a2,-(sp)
         tst.w d2
         ble .out
@@ -151,14 +163,13 @@ bar_rect:
         sub.w d0,d5                     ; words - 1
         bne.s .masks
         and.w d2,d6                     ; one word: both masks
-.masks: movea.l bar_bitmap,a0
-        mulu #BAR_ROW,d1
+.masks: mulu #BAR_ROW,d1
         adda.l d1,a0
         add.w d0,d0
         adda.w d0,a0                    ; the first word of the first row
         subq.w #1,d3
 .row:   movea.l a0,a1
-        moveq #BAR_PLANES-1,d7
+        move.w a4,d7
         move.w d4,d1
 .plane: movea.l a1,a2
         lsr.w #1,d1
@@ -187,7 +198,7 @@ bar_rect:
         move.w d2,d0
         not.w d0
         and.w d0,(a2)
-.next:  lea BAR_PLANE(a1),a1
+.next:  adda.w a3,a1
         dbra d7,.plane
         lea BAR_ROW(a0),a0
         dbra d3,.row
@@ -483,7 +494,8 @@ help_version:
         bsr bar_text
 .done:  rts
 
-; The widget under the cursor: D0 = its id, or -1. Only buttons count.
+; The widget under the cursor: D0 and hover = its id, or -1. Only buttons
+; count.
 widget_at:
         move.w G_CURSOR_Y(a5),d1
         sub.w #BAR_CURSOR_Y,d1
@@ -508,10 +520,11 @@ widget_at:
         cmp.w d2,d1
         bhs.s .next
         move.w W_ID(a1),d0
-        rts
+        bra.s .out
 .next:  lea W_SIZE(a1),a1
         bra.s .widget
 .none:  moveq #-1,d0
+.out:   move.w d0,hover
         rts
 
 ; D0 an id -> A1 its widget in the current table, or 0.
@@ -595,6 +608,24 @@ put_str:
         subq.l #1,a3
         rts
 
+; A1 then A0: two zero-terminated texts. Changes A0/A1.
+put_pair:
+        exg a0,a1
+        bsr.s put_str
+        movea.l a1,a0
+        bra.s put_str
+
+; D0 minutes and D2 seconds, as M:SS. Changes D0.
+put_time:
+        bsr.s put_number
+        move.b #':',(a3)+
+        cmp.w #10,d2
+        bhs.s .seconds
+        move.b #'0',(a3)+
+.seconds:
+        move.w d2,d0
+        ; fall through
+
 ; D0 an unsigned word in decimal.
 put_number:
         movem.l d0-d2,-(sp)
@@ -607,8 +638,7 @@ put_number:
         move.w d0,-(sp)
         addq.w #1,d2
         clr.w d0
-        swap d0
-        tst.w d0
+        swap d0                         ; Z set by the quotient
         bne.s .divide
 .digit: move.w (sp)+,d0
         move.b d0,(a3)+
@@ -618,8 +648,6 @@ put_number:
         movem.l (sp)+,d0-d2
         rts
 
-s_version_long: EDITOR_VERSION
-                dc.b " by Timo Heimonen",0
 s_version_short: EDITOR_VERSION
                 dc.b " by Timo H.",0
                 even

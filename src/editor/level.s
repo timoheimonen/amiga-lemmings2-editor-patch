@@ -1,4 +1,4 @@
-; Lemmings 2: The Tribes In-Game Level Editor V1.2
+; Lemmings 2: The Tribes In-Game Level Editor V1.2.1
 ; Copyright (c) 2026 Timo Heimonen <timo.heimonen@proton.me>
 ; Licensed under the MIT License. See the LICENSE file for details.
 ;
@@ -64,7 +64,6 @@ COP_MENU_SPRITES equ $544       ; the menu list's sprite pointers (the
                                 ; picker's slot frame)
 
 ; Game globals (A5)
-G_SKILL_SLOT    equ $14e
 G_COUNTS        equ $164
 G_MINUTES       equ $176
 G_SECONDS       equ $178
@@ -87,8 +86,6 @@ R_VIEW          equ $4a         ; six LE16: scroll x, y, lower x, y, upper x, y
 R_LIMITS        equ R_VIEW+4    ; the four limits
 R_LOST          equ $56         ; LE16: the best grade's limit
 R_RATE          equ $58         ; LE16: the release interval is 21 - rate
-R_CELLS_SIZE    equ $1ecc       ; L2MP: 1971 cells
-R_BO_SIZE       equ $280        ; L2BO: 64 placements
 
 ; The editor's ranges
 SKILL_SLOTS     equ 8
@@ -121,12 +118,11 @@ ROW_C           equ 26          ; the Param mode's second row of tools
 
 level_input:
         bsr widget_at
-        move.w d0,hover
         move.w key,d0
         beq .mouse
         bsr edit_key
 .mouse: tst.b G_LEFT_CLICK(a5)
-        beq .held
+        beq held_repeat
         clr.w held_passes
         move.w hover,held_widget        ; only the button pressed repeats
         move.w G_CURSOR_Y(a5),d1
@@ -136,34 +132,7 @@ level_input:
         blo panel_click
         move.w hover,d0
         bpl widget_click
-        rts
-.held:  tst.b G_LEFT_DOWN(a5)           ; a held -/+ button repeats
-        beq .done
-        move.w hover,d0
-        cmp.w held_widget,d0
-        bne .done
-        bsr level_repeat
-        bne .done
-        addq.w #1,held_passes
-        cmp.w #HOLD_PASSES,held_passes
-        blo .done
-        bra widget_click
 .done:  rts
-
-; D0 a widget -> Z set when it is a -/+ button of the Param mode.
-level_repeat:
-        cmp.w #ID_COUNT_LESS,d0
-        beq .yes
-        cmp.w #ID_COUNT_MORE,d0
-        beq .yes
-        cmp.w #ID_TIME_LESS,d0
-        blo .no
-        cmp.w #ID_LOST_MORE,d0
-        bhi .no
-.yes:   ori #4,ccr
-        rts
-.no:    andi #$fb,ccr
-        rts
 
 ; D0 a key in the Param mode (edit_key has taken the common ones). R and G
 ; step the rate and the best grade's limit up, with Shift down, as U undoes
@@ -188,18 +157,28 @@ level_key:
         cmp.b #'a',d1
         bhs.s .button
         subq.w #1,d0                    ; the button before: less
-        bra.s .button
+.button:
+        bra.s button_pressed
 .table: lea level_keys(pc),a0
-.find:  move.w (a0)+,d1
-        beq .done
+        ; fall through
+
+; D0 a key, A0 a table of key and button words (0 ends it): the key's
+; button pressed.
+key_button:
+        move.w (a0)+,d1
+        beq.s .done
         move.w (a0)+,d2
         cmp.b d1,d0
-        bne .find
-        move.w d2,d0                    ; as its button, unless disabled
-.button:
+        bne.s key_button
+        move.w d2,d0
+        bra.s button_pressed
+.done:  rts
+
+; D0 a button: its action, unless it is disabled.
+button_pressed:
         bsr widget_state
         cmp.w #ST_DISABLED,d5
-        beq .done
+        beq.s .done
         bra widget_action
 .done:  rts
 
@@ -250,7 +229,7 @@ level_action:
         cmp.w #ID_T_OK,d0
         beq title_ok
         cmp.w #ID_T_CANCEL,d0
-        beq page_close
+        beq mode_widgets
         cmp.w #ID_L_TOP,d0
         beq limits_top
         cmp.w #ID_L_BOTTOM,d0
@@ -260,7 +239,7 @@ level_action:
         cmp.w #ID_L_OK,d0
         beq limits_ok
         cmp.w #ID_L_CANCEL,d0
-        beq page_close
+        beq mode_widgets
         rts
 
 ; A click in the panel: the skill under the pointer is selected.
@@ -372,12 +351,9 @@ count_more:
 ; D7 +1 or -1: the selected skill's count, 1 to 99, into the record, the
 ; header, the play count and the panel's digits.
 count_change:
-        move.w level_slot,d0
-        bsr skill_id
+        bsr selected_count              ; -> D1, A0 the record's counts
         beq .done
-        lea edit_record+R_COUNTS,a0
-        moveq #0,d1
-        move.b 0(a0,d0.w),d1
+        move.w level_slot,d0
         add.w d7,d1
         tst.w d7
         bpl.s .more
@@ -408,13 +384,9 @@ count_change:
 ; is empty, as in the shipped levels.
 skill_remove:
         move.w level_slot,d0
-        bsr skill_id
+        bsr skill_id                    ; -> A0 its record word
         beq .done
-        lea edit_record+R_SKILLS,a0
         lea edit_record+R_COUNTS,a1
-        move.w d0,d1
-        add.w d1,d1
-        adda.w d1,a0
         adda.w d0,a1
         moveq #SKILL_SLOTS-2,d1
         sub.w d0,d1
@@ -450,13 +422,6 @@ level_shown:
         moveq #TITLE_SIZE-1,d0
 .title: move.b (a0)+,(a1)+
         dbra d0,.title
-        moveq #0,d0
-        move.b edit_record+R_MINUTES,d0
-        move.b d0,H_MINUTES(a2)
-        move.w d0,G_MINUTES(a5)
-        move.b edit_record+R_SECONDS,d0
-        move.b d0,H_SECONDS(a2)
-        move.w d0,G_SECONDS(a5)
         lea edit_record+R_VIEW,a0       ; six scroll words, the best grade
         lea H_VIEW(a2),a1               ; and the rate, in both in this order
         moveq #8-1,d0
@@ -472,8 +437,7 @@ level_shown:
         moveq #0,d0
 .chosen:
         move.w d0,level_slot
-        st G_CLOCK_DUE(a5)
-        GCALL clock
+        bsr time_shown
         movem.l (sp)+,d0-d7/a0-a3
         ; fall through
 
@@ -518,7 +482,9 @@ skills_fit:
         movea.l a1,a3                   ; and write
         movea.l a2,a4
         moveq #SKILL_SLOTS-1,d2
-.slot:  bsr get_le_a1
+.slot:  move.b 1(a1),d1                 ; the LE16 ID
+        lsl.w #8,d1
+        move.b (a1),d1
         cmp.w d3,d1
         bne.s .keep
         move.w d1,d0
@@ -537,15 +503,6 @@ skills_fit:
         bra.s .empty
 .done:  move.w d0,d1
         movem.l (sp)+,d0/d2-d3/a1-a4    ; the flags stay
-        tst.w d1
-        rts
-
-; A1 a little-endian word -> D1. Preserves all else.
-get_le_a1:
-        moveq #0,d1
-        move.b 1(a1),d1
-        lsl.w #8,d1
-        move.b (a1),d1
         rts
 
 ; When a level was opened (edit_enter): what skills_fit took out of it
@@ -608,19 +565,28 @@ time_change:
 .set:   ext.l d0
         divu #60,d0                     ; minutes, seconds in the high word
         move.b d0,edit_record+R_MINUTES
-        movea.l level_header,a0
-        move.b d0,H_MINUTES(a0)
-        move.w d0,G_MINUTES(a5)
         swap d0
         move.b d0,edit_record+R_SECONDS
+        bsr time_shown
+        bra level_changed
+.done:  rts
+
+; The record's time into the header and the play clock, and the clock
+; drawn. Preserves all.
+time_shown:
+        movem.l d0-d7/a0-a3,-(sp)
+        movea.l level_header,a0
+        moveq #0,d0
+        move.b edit_record+R_MINUTES,d0
+        move.b d0,H_MINUTES(a0)
+        move.w d0,G_MINUTES(a5)
+        move.b edit_record+R_SECONDS,d0
         move.b d0,H_SECONDS(a0)
         move.w d0,G_SECONDS(a5)
-        movem.l d0-d7/a0-a3,-(sp)
         st G_CLOCK_DUE(a5)
         GCALL clock
         movem.l (sp)+,d0-d7/a0-a3
-        bra level_changed
-.done:  rts
+        rts
 
 ; -> D0 the record's time in seconds.
 level_time:
@@ -655,18 +621,22 @@ lost_change:
         ; fall through
 
 ; D7 +1 or -1: the record's word at A0, 0 to D2, and the header's word at
-; D3.
+; D3. A value from elsewhere over the range, a negative one too (shown as
+; it is unsigned), comes down into it at once, as level_widget_state
+; offers.
 word_change:
         bsr get_le
-        add.w d7,d1
-        bmi .done
         tst.w d7
-        bmi .less
+        bmi.s .less
         cmp.w d2,d1
-        bhi .done
+        bhs.s .done                     ; at the top or over it
+        addq.w #1,d1
         bra.s .set
-.less:  cmp.w d2,d1                     ; a value from elsewhere over the
-        bls.s .set                      ; range comes down into it at once
+.less:  tst.w d1
+        beq.s .done
+        subq.w #1,d1
+        cmp.w d2,d1
+        bls.s .set
         move.w d2,d1
 .set:   bsr put_le
         movea.l level_header,a0
@@ -762,7 +732,7 @@ view_frames:
         move.w #BAR_W,d2
         move.w #SCREEN_ROWS,d3
         bsr.s .place
-        bsr solid_frame
+        bsr outline_box
         move.w 4(a0),d0
         move.w 6(a0),d1
         move.w 8(a0),d2
@@ -800,20 +770,14 @@ view_words:
 limits_open:
         lea limit_words,a1
         bsr view_words
-        move.b #PAGE_LIMITS,edit_page
+        moveq #PAGE_LIMITS,d0
         lea limits_widgets(pc),a0
-        move.l a0,widgets
-        sf status_hidden
-        move.w #-1,hover
-        st bar_redraw
-        st fields_changed
-        rts
+        bra page_open
 
 ; Keys on the limits page: T, B and W as their buttons, Return OK, Esc
 ; Cancel; the view scrolls as in the modes.
 limits_input:
         bsr widget_at
-        move.w d0,hover
         move.w key,d0
         beq.s .mouse
         moveq #ID_L_OK,d1
@@ -949,7 +913,7 @@ limits_ok:
         addq.l #2,a1
         dbra d0,.word
         tst.w d2
-        beq page_close
+        beq mode_widgets
         lea s_limits_set(pc),a0
         tst.w d3
         beq.s .message
@@ -958,7 +922,7 @@ limits_ok:
         moveq #UI_OK,d0
         bsr set_message
         bsr level_changed
-        bra page_close
+        bra mode_widgets
 
 ;----------------------------------------------------------------------------
 ; The title
@@ -985,18 +949,9 @@ title_open:
         bne.s .trim
 .length:
         move.b d0,title_length
-        move.b #PAGE_TITLE,edit_page
+        moveq #PAGE_TITLE,d0
         lea title_widgets(pc),a0
-        move.l a0,widgets
-        sf status_hidden
-        move.w #-1,hover
-        st bar_redraw
-        rts
-
-; The title or the limits page closed: the Param mode's tools again.
-page_close:
-        move.b #PAGE_EDIT,edit_page
-        bra mode_widgets
+        bra page_open
 
 ; The typed title, padded with spaces, into the record and the header.
 title_ok:
@@ -1021,22 +976,21 @@ title_ok:
         move.b d0,(a2)+
         dbra d1,.copy
         tst.w d2
-        beq page_close
+        beq mode_widgets
         bsr level_changed
-        bra page_close
+        bra mode_widgets
 
 ; Keys on the title page: characters of the game's font (32 to 122, '#'
 ; aside, which its text streams take for a number) are added, Backspace
 ; and Del take the last off, Return keeps the title, Esc the old one.
 title_input:
         bsr widget_at
-        move.w d0,hover
         move.w key_char,d0
         beq .mouse
         cmp.b #KEY_RETURN,d0
         beq title_ok
         cmp.b #KEY_ESC,d0
-        beq page_close
+        beq mode_widgets
         cmp.b #8,d0
         beq .delete
         cmp.b #$7f,d0
@@ -1080,12 +1034,7 @@ skills_ask:
 ; again. Jumped to from edit_loop at the end of a pass.
 skills_flow:
         sf skills_wanted
-        move.w G_SCROLL_X(a5),resume_x
-        move.w G_SCROLL_Y(a5),resume_y
-        bsr view_fade_out
-        bsr bar_hide
-        move.l g_idle,G_CALLBACK(a5)
-        move.w #MENU_MAX_Y,G_CURSOR_MAX_Y(a5)
+        bsr view_leave
         move.b #SCREEN_PICKER,screen
         bsr pointer_normal
         bsr menu_black
@@ -1106,19 +1055,14 @@ skills_flow:
 ; editor's state (mode, view, brush, selections, unsaved changes) kept.
 edit_rebuild:
         st resuming
-        lea edit_record,a0
-        lea record_buffer,a1
-        bsr copy_record
-        bsr pointer_busy
-        lea edit_record+R_STYLE,a0
-        bsr get_le
-        move.w d1,d0
-        bsr enter_level
-        GJUMP build
+        bra build_record
 
-; The picker with its six temporary patches; picker_cancel is set when
-; Esc or the right button kept the old skills.
+; The picker with its six temporary patches, the original bytes kept aside
+; meanwhile; picker_cancel is set when Esc or the right button kept the old
+; skills.
 picker_call:
+        moveq #0,d0
+        bsr picker_bytes                ; the original bytes aside
         movea.l hunk0,a2
         adda.l #P_PICKER_FRAME,a2
         lea picker_frame(pc),a0
@@ -1130,9 +1074,8 @@ picker_call:
         adda.l #P_PICKER_PROMPT,a2
         lea picker_prompt(pc),a0
         move.l a0,2(a2)
-        PATCH P_PICKER_ICON,$4eb9,picker_icon   ; jsr
-        PATCH P_PICKER_PICK,$4eb9,picker_pick   ; jsr
-        PATCH P_PICKER_NAME,$4eb9,picker_name   ; jsr
+        lea picker_hooks(pc),a0
+        bsr patch_hooks
         lea edit_record+R_STYLE,a0
         bsr get_le
         tst.w d1
@@ -1143,34 +1086,8 @@ picker_call:
         sf picker_cancel
         clr.b G_RIGHT_CLICK(a5)
         GCALL picker
-        movea.l hunk0,a2                ; the original bytes again
-        move.l a2,d0
-        add.l #G_WAIT_FRAME,d0
-        adda.l #P_PICKER_FRAME,a2
-        move.l d0,2(a2)
-        movea.l hunk0,a2
-        adda.l #P_PICKER_DONE,a2
-        move.w #$2079,(a2)
-        movea.l hunk0,a2
-        move.l a2,d0
-        add.l #PICKER_PROMPT,d0
-        adda.l #P_PICKER_PROMPT,a2
-        move.l d0,2(a2)
-        movea.l hunk0,a2
-        adda.l #P_PICKER_ICON,a2
-        move.l #PICKER_ICON_BSR,(a2)+
-        move.l #$06400020,(a2)
-        movea.l hunk0,a2
-        adda.l #P_PICKER_PICK,a2
-        move.l #$52402f00,(a2)+
-        move.l #$43ed01a0,(a2)
-        movea.l hunk0,a2
-        move.l a2,d0
-        add.l #SKILL_NAMES,d0
-        adda.l #P_PICKER_NAME,a2
-        move.w #$5240,(a2)+
-        move.w #$41f9,(a2)+
-        move.l d0,(a2)
+        moveq #1,d0
+        bsr picker_bytes                ; the original bytes again
         bsr flush_cache
         ; what the game does after the eighth choice ($161B6..$161DC)
         bsr menu_descriptor
@@ -1183,6 +1100,35 @@ picker_call:
         clr.w $a(a0)
         clr.w $e(a0)
         rts
+
+; The first eight bytes of the picker's patch points kept aside in
+; picker_saved (D0 = 0) or put back (D0 = 1). Changes D1/A0-A2.
+picker_bytes:
+        lea picker_points(pc),a0
+        lea picker_saved,a1
+        moveq #PICKER_POINTS-1,d1
+.point: movea.l hunk0,a2
+        adda.l (a0)+,a2
+        tst.w d0
+        bne.s .back
+        move.l (a2)+,(a1)+
+        move.l (a2),(a1)+
+        bra.s .next
+.back:  move.l (a1)+,(a2)+
+        move.l (a1)+,(a2)
+.next:  dbra d1,.point
+        rts
+
+picker_points:
+        dc.l P_PICKER_FRAME,P_PICKER_DONE,P_PICKER_PROMPT
+        dc.l P_PICKER_ICON,P_PICKER_PICK,P_PICKER_NAME
+PICKER_POINTS   equ 6
+
+picker_hooks:
+        HOOK P_PICKER_ICON,$4eb9,picker_icon    ; jsr
+        HOOK P_PICKER_PICK,$4eb9,picker_pick    ; jsr
+        HOOK P_PICKER_NAME,$4eb9,picker_name    ; jsr
+        dc.l -1
 
 ; -> A0 the menu screen's display descriptor.
 menu_descriptor:
@@ -1344,8 +1290,8 @@ level_help:
 .show:  moveq #UI_DIM,d0
         bra set_help
 
-; -> D1 the selected skill's count; Z set when its slot has no skill.
-; Preserves D0.
+; -> D1 the selected skill's count and A0 the record's counts; Z set when
+; its slot has no skill. Preserves D0.
 selected_count:
         move.l d0,-(sp)
         move.w level_slot,d0
@@ -1362,8 +1308,8 @@ selected_count:
 ; need a skill in the selected slot; -/+ stop at their range; < and > at
 ; the first and the last skill. Preserves the other registers.
 level_widget_state:
-        movem.l d0-d4/d6-d7/a0,-(sp)
-        moveq #ST_NORMAL,d7
+        movem.l d0-d2/d6/a0,-(sp)
+        moveq #ST_NORMAL,d5
         move.w d0,d6
         cmp.w #ID_REMOVE,d6
         beq .used
@@ -1434,14 +1380,13 @@ level_widget_state:
         bhs .disabled
         bra .out
 .disabled:
-        moveq #ST_DISABLED,d7
-.out:   move.w d7,d5
-        movem.l (sp)+,d0-d4/d6-d7/a0
+        moveq #ST_DISABLED,d5
+.out:   movem.l (sp)+,d0-d2/d6/a0
         rts
 
-; D0 a Param text field -> its text at A3.
+; D0 a Param text field -> its text at A3 (widget_text ends it). Changes
+; D0-D2/A0.
 level_widget_text:
-        movem.l d0-d2/a0,-(sp)
         cmp.w #ID_COUNT,d0
         bne .time
         lea s_count(pc),a0
@@ -1459,16 +1404,9 @@ level_widget_text:
         bsr put_str
         moveq #0,d0
         move.b edit_record+R_MINUTES,d0
-        bsr put_number
-        move.b #':',(a3)+
-        moveq #0,d0
-        move.b edit_record+R_SECONDS,d0
-        cmp.w #10,d0
-        bhs .seconds
-        move.b #'0',(a3)+
-.seconds:
-        bsr put_number
-        bra .out
+        moveq #0,d2
+        move.b edit_record+R_SECONDS,d2
+        bra put_time
 .rate:  cmp.w #ID_RATE,d0
         bne .lost
         lea s_rate(pc),a0
@@ -1518,9 +1456,7 @@ level_widget_text:
 .char:  move.b (a0)+,(a3)+
 .test:  dbra d0,.char
         move.b #'_',(a3)+
-.out:   clr.b (a3)
-        movem.l (sp)+,d0-d2/a0
-        rts
+.out:   rts
 
 ;============================================================================
 ; The Param mode's widgets: two rows of tools; the status line's place is
@@ -1630,4 +1566,5 @@ picker_classic: ds.b 1                  ; the picker offers the Blocker
 skills_fitted:  ds.w 1                  ; the skill skills_fit took out
 resume_x:       ds.w 1
 resume_y:       ds.w 1
+picker_saved:   ds.l 2*PICKER_POINTS    ; the picker's original bytes
 frame_words:    ds.w 6                  ; the record's scroll words, to draw

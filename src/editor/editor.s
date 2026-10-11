@@ -1,4 +1,4 @@
-; Lemmings 2: The Tribes In-Game Level Editor V1.2
+; Lemmings 2: The Tribes In-Game Level Editor V1.2.1
 ; Copyright (c) 2026 Timo Heimonen <timo.heimonen@proton.me>
 ; Licensed under the MIT License. See the LICENSE file for details.
 ;
@@ -44,10 +44,10 @@
 ;
 ; Game addresses are offsets in the game's hunk 0 unless another hunk is
 ; named; init adds the load address of the hunk, from the interface table
-; (SETADDR). Hunk 3 holds the record of the selected level. The editor is
-; assembled for one release of the game (release.i); GAME gives an address
-; in the US release and in the PAL release. Addresses in the comments are
-; the US release's.
+; (hunk0_offsets, hunk1_offsets). Hunk 3 holds the record of the selected
+; level. The editor is assembled for one release of the game (release.i);
+; GAME gives an address in the US release and in the PAL release.
+; Addresses in the comments are the US release's.
 
         include "whdload_api.i"
         include "version.i"             ; EDITOR_VERSION
@@ -57,7 +57,6 @@
         GAME G_SOUND,$00602,$005fa              ; play the effect A5+$15c
         GAME G_STOP_SOUND,$165dc,$16310         ; what the title does before leaving
         GAME G_POINTER,$01712,$016f2            ; show the pointer sprite A5+$21e, height A5+$186
-        GAME G_WAIT_PRESS,$0150e,$014ee         ; wait for the left mouse button
         GAME G_INIT_PLAY,$0151a,$014fa          ; entities, skills and clock from the header
         GAME G_LOAD_STYLE,$018ce,$018ae         ; style, tune and tribe art of tribe A5+$14c
         GAME G_SELECT_LEVEL,$019ae,$0198e       ; select level D0 and parse it
@@ -137,11 +136,9 @@ G_ENTRANCES     equ $194        ; entrances in the level's entrance table
 G_RELEASE_HOLD  equ $1de        ; ReleaseL2Lemming releases nothing while set
 G_OPENING       equ $1e6        ; the entrances are opening
         GAME G_POINTER_DATA,$21e,$21c
-        GAME G_MENU_ART,$24a,$248               ; sprites of the menu screens
 
 ; The level record (the FORM/L2LV file)
 RECORD_SIZE     equ $21c8
-HEAD_SIZE       equ $74         ; up to the L2MP chunk's size
 MAP_BYTES       equ 1971*4      ; the L2MP chunk's size
 OBJECTS_BYTES   equ 64*10       ; the L2BO chunk's
 R_TITLE_TEXT    equ $14         ; 24 characters
@@ -253,12 +250,20 @@ MBUTTON macro                   ; a button of a menu page (menu.s): x, y,
         dc.l \4,\5
         endm
 
-PATCH   macro                   ; \2 abs.l (jmp or jsr) \3 at hunk 0 + \1, nop
-        movea.l hunk0,a1
-        adda.l #\1,a1
-        move.w #\2,(a1)+
-        move.l #\3,(a1)+
-        move.w #$4e71,(a1)
+HUNK0_ADDR macro                ; \1 = the address of offset \2 in hunk 0,
+\1      equ hunk0_addresses+(*-hunk0_offsets)   ; set by init
+        dc.l \2
+        endm
+
+HUNK1_ADDR macro                ; the same in hunk 1
+\1      equ hunk1_addresses+(*-hunk1_offsets)
+        dc.l \2
+        endm
+
+HOOK    macro                   ; \2 abs.l (jmp or jsr) \3 at hunk 0 + \1, nop:
+        dc.l \1                 ; an entry of a table for patch_hooks
+        dc.w \2
+        dc.l \3
         endm
 
 ;============================================================================
@@ -299,7 +304,8 @@ checks: dc.l P_CROSSES,$206d0248        ; movea.l $248(a5),a0
         endif
         dc.l FONT_WIDTHS,$06050808      ; ' ', '!', '"' and '#'
         dc.l G_TEXT,$48e7e0fe           ; movem.l d0-d2/a0-a6,-(sp)
-        dc.l G_PICKER,$426d014e,G_PICKER+4,$43ed01a0
+        dc.l G_PICKER,$426d014e,G_PICKER+4,$43ed01a0 ; clr.w $14e(a5) /
+                                        ; lea $1a0(a5),a1
         dc.l P_PICKER_ICON,PICKER_ICON_BSR      ; bsr.w G_SPRITE
         dc.l P_PICKER_ICON+4,$06400020  ; addi.w #32,d0
         dc.l P_PICKER_PICK,$52402f00    ; addq.w #1,d0 / move.l d0,-(sp)
@@ -348,6 +354,96 @@ letters:
         dc.w 294,147,14,26              ; d
         dc.w 40,181,6,39                ; i
         dc.w 45,181,14,44               ; t
+
+; The game addresses the editor uses, set by init: each name is a long
+; word of hunk0_addresses or hunk1_addresses, in the order of the offsets.
+hunk0_offsets:
+        HUNK0_ADDR g_sound,G_SOUND
+        HUNK0_ADDR g_stop_sound,G_STOP_SOUND
+        HUNK0_ADDR g_pointer,G_POINTER
+        HUNK0_ADDR g_init_play,G_INIT_PLAY
+        HUNK0_ADDR g_load_style,G_LOAD_STYLE
+        HUNK0_ADDR g_select_level,G_SELECT_LEVEL
+        HUNK0_ADDR g_count,G_COUNT
+        ifnd PAL_RELEASE
+        HUNK0_ADDR g_protection,G_PROTECTION
+        endif
+        HUNK0_ADDR g_copper,G_COPPER
+        HUNK0_ADDR g_fade,G_FADE
+        HUNK0_ADDR g_unpack_menu,G_UNPACK_MENU
+        HUNK0_ADDR g_show_menu,G_SHOW_MENU
+        HUNK0_ADDR g_restore_rect,G_RESTORE_RECT
+        HUNK0_ADDR g_text,G_TEXT
+        HUNK0_ADDR g_sprite,G_SPRITE
+        HUNK0_ADDR r_title,R_TITLE
+        HUNK0_ADDR r_build,R_BUILD
+        HUNK0_ADDR r_result,R_RESULT
+        HUNK0_ADDR r_escape_test,R_ESCAPE_TEST
+        HUNK0_ADDR r_after_tab,R_AFTER_TAB
+        HUNK0_ADDR g_video,G_VIDEO
+        HUNK0_ADDR r_release,R_RELEASE
+        HUNK0_ADDR r_opening,R_OPENING
+        HUNK0_ADDR r_opened,R_OPENED
+        HUNK0_ADDR font_widths,FONT_WIDTHS
+        HUNK0_ADDR r_crosses_done,R_CROSSES_DONE
+        HUNK0_ADDR r_title_again,R_TITLE_AGAIN
+        ifd PAL_RELEASE
+        HUNK0_ADDR r_next_column,R_NEXT_COLUMN
+        endif
+        HUNK0_ADDR level_header,HEADER
+        HUNK0_ADDR style_table,STYLE_NAMES
+        HUNK0_ADDR g_wait_play,G_WAIT_PLAY
+        HUNK0_ADDR g_scroll,G_SCROLL
+        HUNK0_ADDR g_copy_view,G_COPY_VIEW
+        HUNK0_ADDR g_view_desc,G_VIEW_DESC
+        HUNK0_ADDR g_objects,G_OBJECTS
+        HUNK0_ADDR g_redraw,G_REDRAW
+        HUNK0_ADDR g_buttons,G_BUTTONS
+        HUNK0_ADDR g_key,G_KEY
+        HUNK0_ADDR g_play_pointer,G_PLAY_POINTER
+        HUNK0_ADDR g_planes,G_PLANES
+        HUNK0_ADDR g_wait_frame,G_WAIT_FRAME
+        HUNK0_ADDR g_music_off,G_MUSIC_OFF
+        HUNK0_ADDR g_music_on,G_MUSIC_ON
+        HUNK0_ADDR g_idle,G_IDLE
+        HUNK0_ADDR r_loop_rest,R_LOOP_REST
+        HUNK0_ADDR scroll_flags,SCROLL_FLAGS
+        HUNK0_ADDR g_find_type,G_FIND_TYPE
+        HUNK0_ADDR g_expand_objects,G_EXPAND_OBJECTS
+        HUNK0_ADDR g_border_clear,G_BORDER_CLEAR
+        HUNK0_ADDR placements,PLACEMENTS
+        HUNK0_ADDR g_picker,G_PICKER
+        HUNK0_ADDR g_panel,G_PANEL
+        HUNK0_ADDR g_panel_slot,G_PANEL_SLOT
+        HUNK0_ADDR g_panel_count,G_PANEL_COUNT
+        HUNK0_ADDR g_clock,G_CLOCK
+        HUNK0_ADDR g_frame_end,G_FRAME_END
+HUNK0_COUNT     equ (*-hunk0_offsets)/4
+hunk1_offsets:
+        HUNK1_ADDR pal_black,PAL_BLACK
+        HUNK1_ADDR pal_menu,PAL_MENU
+        HUNK1_ADDR cop_title,COP_TITLE
+        HUNK1_ADDR cop_menu,COP_MENU
+        HUNK1_ADDR ptr_normal,PTR_NORMAL
+        HUNK1_ADDR ptr_busy,PTR_BUSY
+        HUNK1_ADDR pal_play,PAL_PLAY
+        HUNK1_ADDR ptr_cross,PTR_CROSS
+HUNK1_COUNT     equ (*-hunk1_offsets)/4
+
+; The hooks into the game, patched by init.
+hooks:  HOOK P_CROSSES,$4ef9,hook_crosses       ; jmp
+        ifnd PAL_RELEASE
+        HOOK P_QUIT,$4ef9,hook_quit             ; jmp
+        endif
+        HOOK P_COUNT,$4eb9,hook_count           ; jsr
+        HOOK P_PLAY_END,$4ef9,hook_play_end     ; jmp
+        HOOK P_ESCAPE,$4ef9,hook_escape         ; jmp
+        HOOK P_TAB,$4ef9,hook_tab               ; jmp
+        HOOK P_RELEASE,$4ef9,hook_release       ; jmp
+        HOOK P_OPENING,$4ef9,hook_opening       ; jmp
+        HOOK P_FRAME,$4ef9,hook_frame           ; jmp
+        HOOK P_SPRITE_POS,$4ef9,sprite_words    ; jmp
+        dc.l -1
 
 ;----------------------------------------------------------------------------
 ; Called by the slave once: copy the interface, check and patch.
@@ -410,98 +506,36 @@ init:
         bne .wrong
         move.l d0,menu_bitmap
 
-        SETADDR g_sound,hunk0,G_SOUND
-        SETADDR g_stop_sound,hunk0,G_STOP_SOUND
-        SETADDR g_pointer,hunk0,G_POINTER
-        SETADDR g_wait_press,hunk0,G_WAIT_PRESS
-        SETADDR g_init_play,hunk0,G_INIT_PLAY
-        SETADDR g_load_style,hunk0,G_LOAD_STYLE
-        SETADDR g_select_level,hunk0,G_SELECT_LEVEL
-        SETADDR g_count,hunk0,G_COUNT
-        ifnd PAL_RELEASE
-        SETADDR g_protection,hunk0,G_PROTECTION
-        endif
-        SETADDR g_copper,hunk0,G_COPPER
-        SETADDR g_fade,hunk0,G_FADE
-        SETADDR g_unpack_menu,hunk0,G_UNPACK_MENU
-        SETADDR g_show_menu,hunk0,G_SHOW_MENU
-        SETADDR g_restore_rect,hunk0,G_RESTORE_RECT
-        SETADDR g_text,hunk0,G_TEXT
-        SETADDR g_sprite,hunk0,G_SPRITE
-        SETADDR r_title,hunk0,R_TITLE
-        SETADDR r_build,hunk0,R_BUILD
-        SETADDR r_result,hunk0,R_RESULT
-        SETADDR r_escape_test,hunk0,R_ESCAPE_TEST
-        SETADDR r_after_tab,hunk0,R_AFTER_TAB
-        SETADDR g_video,hunk0,G_VIDEO
-        SETADDR r_release,hunk0,R_RELEASE
-        SETADDR r_opening,hunk0,R_OPENING
-        SETADDR r_opened,hunk0,R_OPENED
-        SETADDR font_widths,hunk0,FONT_WIDTHS
-        SETADDR r_crosses_done,hunk0,R_CROSSES_DONE
-        SETADDR r_title_again,hunk0,R_TITLE_AGAIN
-        ifd PAL_RELEASE
-        SETADDR r_next_column,hunk0,R_NEXT_COLUMN
-        endif
-        SETADDR level_header,hunk0,HEADER
-        SETADDR style_table,hunk0,STYLE_NAMES
-        SETADDR pal_black,hunk1,PAL_BLACK
-        SETADDR pal_menu,hunk1,PAL_MENU
-        SETADDR cop_title,hunk1,COP_TITLE
-        SETADDR cop_menu,hunk1,COP_MENU
-        SETADDR ptr_normal,hunk1,PTR_NORMAL
-        SETADDR ptr_busy,hunk1,PTR_BUSY
-        SETADDR g_wait_play,hunk0,G_WAIT_PLAY
-        SETADDR g_scroll,hunk0,G_SCROLL
-        SETADDR g_copy_view,hunk0,G_COPY_VIEW
-        SETADDR g_view_desc,hunk0,G_VIEW_DESC
-        SETADDR g_objects,hunk0,G_OBJECTS
-        SETADDR g_redraw,hunk0,G_REDRAW
-        SETADDR g_buttons,hunk0,G_BUTTONS
-        SETADDR g_key,hunk0,G_KEY
-        SETADDR g_play_pointer,hunk0,G_PLAY_POINTER
-        SETADDR g_planes,hunk0,G_PLANES
-        SETADDR g_wait_frame,hunk0,G_WAIT_FRAME
-        SETADDR g_music_off,hunk0,G_MUSIC_OFF
-        SETADDR g_music_on,hunk0,G_MUSIC_ON
-        SETADDR g_idle,hunk0,G_IDLE
-        SETADDR r_loop_rest,hunk0,R_LOOP_REST
-        SETADDR scroll_flags,hunk0,SCROLL_FLAGS
-        SETADDR pal_play,hunk1,PAL_PLAY
-        SETADDR ptr_cross,hunk1,PTR_CROSS
-        SETADDR g_find_type,hunk0,G_FIND_TYPE
-        SETADDR g_expand_objects,hunk0,G_EXPAND_OBJECTS
-        SETADDR g_border_clear,hunk0,G_BORDER_CLEAR
-        SETADDR placements,hunk0,PLACEMENTS
-        SETADDR g_picker,hunk0,G_PICKER
-        SETADDR g_panel,hunk0,G_PANEL
-        SETADDR g_panel_slot,hunk0,G_PANEL_SLOT
-        SETADDR g_panel_count,hunk0,G_PANEL_COUNT
-        SETADDR g_clock,hunk0,G_CLOCK
-        SETADDR g_frame_end,hunk0,G_FRAME_END
+        lea hunk0_offsets(pc),a0
+        lea hunk0_addresses,a1
+        move.l hunk0,d2
+        moveq #HUNK0_COUNT-1,d1
+.hunk0: move.l (a0)+,d0
+        add.l d2,d0
+        move.l d0,(a1)+
+        dbra d1,.hunk0
+        lea hunk1_offsets(pc),a0
+        lea hunk1_addresses,a1
+        move.l hunk1,d2
+        moveq #HUNK1_COUNT-1,d1
+.hunk1: move.l (a0)+,d0
+        add.l d2,d0
+        move.l d0,(a1)+
+        dbra d1,.hunk1
         move.w #NEW_STYLE,new_style
         move.w #NEW_SHAPE,new_shape
         SETADDR bar_copper,chip_base,CHIP_BAR_COPPER
         SETADDR bar_bitmap,chip_base,CHIP_BAR
         bsr load_tile_defaults
 
-        PATCH P_CROSSES,$4ef9,hook_crosses      ; jmp
-        ifnd PAL_RELEASE
-        PATCH P_QUIT,$4ef9,hook_quit            ; jmp
-        else
+        lea hooks(pc),a0
+        bsr patch_hooks
+        ifd PAL_RELEASE
         movea.l hunk0,a1                ; jmp hook_quit_column, no NOP: the
         adda.l #P_QUIT,a1               ; next column's test follows at once
         move.w #$4ef9,(a1)+
         move.l #hook_quit_column,(a1)
         endif
-        PATCH P_COUNT,$4eb9,hook_count          ; jsr
-        PATCH P_PLAY_END,$4ef9,hook_play_end    ; jmp
-        PATCH P_ESCAPE,$4ef9,hook_escape        ; jmp
-        PATCH P_TAB,$4ef9,hook_tab              ; jmp
-        PATCH P_RELEASE,$4ef9,hook_release      ; jmp
-        PATCH P_OPENING,$4ef9,hook_opening      ; jmp
-        PATCH P_FRAME,$4ef9,hook_frame          ; jmp
-        PATCH P_SPRITE_POS,$4ef9,sprite_words   ; jmp
         moveq #0,d0
         bra.s .done
 .no_chip:
@@ -513,6 +547,19 @@ init:
 .done:  movem.l (sp)+,d1-d7/a1-a6
         rts
 
+; A0 a table of HOOK entries, ended by -1: each instruction at its hunk 0
+; offset becomes the opcode with its address, then a NOP. Changes D0/A0/A1.
+patch_hooks:
+        move.l (a0)+,d0
+        bmi.s .done
+        movea.l hunk0,a1
+        adda.l d0,a1
+        move.w (a0)+,(a1)+
+        move.l (a0)+,(a1)+
+        move.w #$4e71,(a1)
+        bra.s patch_hooks
+.done:  rts
+
 ; The usual Decor and Steel flags of each style's tiles (data/EditorTiles),
 ; which the install tool computes from the game's own levels; without the
 ; file the editor starts with both off.
@@ -520,7 +567,7 @@ load_tile_defaults:
         movea.l resload_base,a2
         lea s_tiles_file(pc),a0
         jsr resload_GetFileSize(a2)
-        cmp.l #STYLE_COUNT*TILE_DEFAULTS,d0
+        cmp.l #STYLES*TILE_DEFAULTS,d0
         bne.s .none
         lea s_tiles_file(pc),a0
         lea tile_defaults,a1
@@ -737,49 +784,54 @@ start_play:
 load_selected:
         bsr pointer_busy
         move.w selected,d0
-        bmi .fail
+        bmi.s .fail
         bsr entry_at
         tst.b E_OK(a2)
-        beq .fail
-        bsr make_path
-        movea.l resload_base,a2
-        lea path,a0
-        jsr resload_GetFileSize(a2)
-        cmp.l #RECORD_SIZE,d0
-        bne .fail
-        lea path,a0
-        lea record_buffer,a1
-        jsr resload_LoadFile(a2)
-        lea record_buffer+R_OBJECTS-8,a0
-        bsr check_objects_chunk
-        bne .fail
-        lea record_buffer,a0
-        bsr check_record
+        beq.s .fail
+        bsr load_record
         tst.w d0
-        bmi .fail
-        move.w record_buffer+R_SHAPE,d1
-        ror.w #8,d1
-        lea record_buffer+R_OBJECTS,a0
-        bsr check_placements
-        bne .fail
+        bmi.s .fail
         rts
 .fail:  bsr pointer_normal
         moveq #-1,d0
         rts
+
+; A2 an entry: path = its file, read whole into record_buffer -> D0 the
+; record's style, or -1 when it is not a valid record. Changes D1/D2/A0/A1
+; and A3.
+load_record:
+        bsr make_path
+        movea.l resload_base,a3
+        lea path,a0
+        jsr resload_GetFileSize(a3)
+        cmp.l #RECORD_SIZE,d0
+        bne.s .bad
+        lea path,a0
+        lea record_buffer,a1
+        jsr resload_LoadFile(a3)
+        lea record_buffer,a0
+        bsr check_record                ; -> D0 the style, D1 the shape
+        tst.w d0
+        bmi.s .done
+        lea record_buffer+R_OBJECTS,a0
+        bsr check_placements
+        beq.s .done
+.bad:   moveq #-1,d0
+.done:  rts
 
 ; record_buffer, of style D0, becomes the selected level: it goes into hunk
 ; 3 and is parsed there; its style is loaded first, as Practice does
 ; ($162A2), with the record's style as the tribe; then play is initialized
 ; as EnterPracticeMode does ($1616A).
 enter_level:
-        move.w d0,play_style
+        move.w d0,-(sp)
         ifnd PAL_RELEASE                ; the PAL release checks $B4 when it
         GCALL protection                ; selects the level
         endif
         lea record_buffer,a0
         movea.l hunk3,a1
         bsr copy_record
-        move.w play_style,d0
+        move.w (sp)+,d0
         cmp.w G_TRIBE(a5),d0
         beq.s .style
         move.w d0,G_TRIBE(a5)
@@ -790,26 +842,16 @@ enter_level:
         GCALL init_play
         rts
 
-; A0: a record, at least HEAD_SIZE bytes. D0 = its style, or -1.
+; A0: a record -> D0 its style and D1 its shape, or D0 = -1. Changes D2
+; and A1.
 check_record:
-        cmp.l #'FORM',(a0)
+        lea record_tags(pc),a1
+        moveq #RECORD_TAGS-1,d1
+.tag:   move.w (a1)+,d0
+        move.l 0(a0,d0.w),d2
+        cmp.l (a1)+,d2
         bne.s .bad
-        cmp.l #RECORD_SIZE-8,4(a0)
-        bne.s .bad
-        cmp.l #'L2LV',8(a0)
-        bne.s .bad
-        cmp.l #'L2LH',$0c(a0)
-        bne.s .bad
-        cmp.l #74,$10(a0)
-        bne.s .bad
-        cmp.l #'L2MH',$5e(a0)
-        bne.s .bad
-        cmp.l #6,$62(a0)
-        bne.s .bad
-        cmp.l #'L2MP',$6c(a0)
-        bne.s .bad
-        cmp.l #MAP_BYTES,$70(a0)        ; the game copies what it says
-        bne.s .bad
+        dbra d1,.tag
         moveq #0,d1
         move.b R_SHAPE+1(a0),d1
         lsl.w #8,d1
@@ -912,16 +954,27 @@ check_values:
 ; inside; one far outside crashed the game in play) and on the 16x8 cell
 ; grid, as every shipped one and every one the editor places (the game's
 ; build, $C6E2, addresses a cell by x / 4 and y / 4 unmasked, so an
-; origin off the grid had its tiles written across cells). Parts that a
-; level from elsewhere repeats past the map are not checked: the game
-; writes them without clipping, as it would in its own levels. Preserves
-; D0/A0.
+; origin off the grid had its tiles written across cells), and the type's
+; first cells (type_offsets) are not left of or above the map: the same
+; logical shifts put such a cell about 16 KiB away, into the packed level
+; banks (left; the game stopped when it next played that tribe's level) or
+; wherever a word of code points (above). Parts that a level from
+; elsewhere repeats past the map are not checked: the game writes them
+; without clipping, as it would in its own levels. Preserves D0/A0.
 check_placements:
-        movem.l d0-d7/a0-a1,-(sp)
+        movem.l d0-d7/a0-a2,-(sp)
         lea style_types(pc),a1
         moveq #0,d7
         move.b 0(a1,d0.w),d7            ; the style's types
-        movea.l hunk0,a1
+        lea type_offsets(pc),a2
+        moveq #0,d2
+.style: subq.w #1,d0                    ; past the styles before it
+        bmi.s .found
+        move.b (a1)+,d2
+        adda.w d2,a2
+        adda.w d2,a2
+        bra.s .style
+.found: movea.l hunk0,a1
         adda.l #G_SHAPES,a1
         lsl.w #2,d1
         move.w 0(a1,d1.w),d5
@@ -936,6 +989,8 @@ check_placements:
         beq.s .next
         cmp.w d7,d0
         bhs.s .bad
+        move.w d0,d3
+        add.w d3,d3                     ; its two offsets
         bsr.s .le                       ; x
         cmp.w #-PLACE_SLACK,d0
         blt.s .bad
@@ -944,6 +999,10 @@ check_placements:
         moveq #(1<<CELL_SHIFT_X)-1,d1   ; on a cell column
         and.w d0,d1
         bne.s .bad
+        move.b 0(a2,d3.w),d1
+        ext.w d1
+        add.w d0,d1                     ; its first cells not left of the map
+        bmi.s .bad
         bsr.s .le                       ; y
         cmp.w #-PLACE_SLACK,d0
         blt.s .bad
@@ -952,6 +1011,10 @@ check_placements:
         moveq #(1<<CELL_SHIFT_Y)-1,d1   ; and row
         and.w d0,d1
         bne.s .bad
+        move.b 1(a2,d3.w),d1
+        ext.w d1
+        add.w d0,d1                     ; nor above it
+        bmi.s .bad
         bsr.s .le                       ; copies across
         cmp.w #MAX_REPEAT,d0
         bhi.s .bad
@@ -964,7 +1027,7 @@ check_placements:
         cmp.b d0,d0                     ; Z set
         bra.s .out
 .bad:   moveq #1,d0                     ; Z clear
-.out:   movem.l (sp)+,d0-d7/a0-a1       ; the flags stay
+.out:   movem.l (sp)+,d0-d7/a0-a2       ; the flags stay
         rts
 .le:    moveq #0,d0                     ; the next LE16 at A0
         move.b 1(a0),d0
@@ -979,13 +1042,82 @@ style_types:
         dc.b 14,14,13,17,18,14,12,15,14,23,13,18
         even
 
-; A0: the 8 bytes before R_OBJECTS -> Z set when they are the L2BO chunk's
-; tag and size, as the game's parser walks to it.
-check_objects_chunk:
-        cmp.l #'L2BO',(a0)
-        bne.s .done
-        cmp.l #OBJECTS_BYTES,4(a0)
-.done:  rts
+; Where each type's cells start: for every type of every style, in the
+; order of style_types, the lowest x and y (signed bytes, pixels from the
+; origin) of the cells its parts write when the game builds it at no
+; repeats (the build adds a part's dx and dy before it writes the part);
+; repeats only add to them. Worked out from the object definitions of the
+; style files.
+type_offsets:
+        ; classic
+        dc.b 0,0,0,0,0,0,0,0,0,0,16,0,16,0,32,0
+        dc.b 16,0,16,0,16,0,16,0,16,0,0,0
+        ; beach
+        dc.b 0,0,0,-8,0,0,0,0,0,0,0,0,16,8,16,0
+        dc.b 32,0,32,0,16,0,16,0,16,0,0,-8
+        ; cavelem
+        dc.b 0,0,-16,-8,0,0,0,0,0,0,16,0,16,0,32,0
+        dc.b 16,0,0,0,0,0,-16,-8,0,0
+        ; circus
+        dc.b 0,0,0,-8,0,0,0,0,0,0,0,0,0,0,0,0
+        dc.b 0,0,0,0,0,0,32,0,32,0,16,0,16,0,16,0
+        dc.b 0,-8
+        ; egyptian
+        dc.b 0,0,0,-8,0,0,0,0,0,0,0,0,0,0,0,0
+        dc.b 0,0,16,0,16,0,32,0,32,0,16,0,16,0,16,0
+        dc.b 0,-8,0,0
+        ; highland
+        dc.b 0,0,0,0,0,0,0,0,0,0,0,0,16,0,16,0
+        dc.b 32,0,32,0,16,0,16,0,0,0,0,0
+        ; medieval
+        dc.b 0,0,0,0,0,0,0,0,0,0,0,0,16,0,16,0
+        dc.b 32,0,16,0,0,0,0,0
+        ; outdoor
+        dc.b 0,0,0,0,0,0,0,0,0,0,0,0,0,0,16,0
+        dc.b 16,0,16,0,16,0,16,0,16,0,0,0,0,0
+        ; polar
+        dc.b 0,0,0,0,0,0,0,0,32,0,16,0,16,0,0,0
+        dc.b 16,8,16,0,0,0,0,0,16,8,0,0
+        ; shadow
+        dc.b 0,0,0,0,0,0,0,0,32,0,16,0,16,0,16,0
+        dc.b 16,0,0,0,0,0,0,0,0,0,0,0,16,8,16,0
+        dc.b 0,0,0,0,0,0,0,0,0,0,0,0,0,0
+        ; space
+        dc.b 0,0,0,0,0,0,0,0,32,0,16,0,0,0,0,0
+        dc.b 0,0,0,0,0,0,0,0,0,0
+        ; sports
+        dc.b 0,0,0,0,0,0,32,0,16,0,16,0,16,0,32,0
+        dc.b 0,0,16,0,16,0,0,8,0,8,0,0,16,8,16,0
+        dc.b 0,0,0,0
+        even
+
+; The record's chunk tags and sizes, as the game's parser walks them
+; (check_record) and a new record has them (new_record): the offset in the
+; record and the long word there.
+record_tags:
+        dc.w 0
+        dc.l 'FORM'
+        dc.w 4
+        dc.l RECORD_SIZE-8
+        dc.w 8
+        dc.l 'L2LV'
+        dc.w $0c
+        dc.l 'L2LH'
+        dc.w $10
+        dc.l 74
+        dc.w $5e
+        dc.l 'L2MH'
+        dc.w $62
+        dc.l 6
+        dc.w $6c
+        dc.l 'L2MP'
+        dc.w $70
+        dc.l MAP_BYTES                  ; the game copies what it says
+        dc.w R_OBJECTS-8
+        dc.l 'L2BO'
+        dc.w R_OBJECTS-4
+        dc.l OBJECTS_BYTES
+RECORD_TAGS     equ (*-record_tags)/6
 
 ; D0 = the result's grade by the game's rule ($E04E): 3 when no more were
 ; lost than the threshold, 2 when at most half, else 1; 0 when none saved.
@@ -1163,16 +1295,16 @@ list_buttons:
         MBUTTON MB_COLUMN_3,MB_ROW_1,'n',s_new_label,h_new_level
         MBUTTON MB_COLUMN_1,MB_ROW_2,'r',s_rename_label,h_rename_level
         MBUTTON MB_COLUMN_2,MB_ROW_2,$7f,s_delete,h_delete_level
-        MBUTTON MB_COLUMN_3,MB_ROW_2,KEY_ESC,s_back_label,h_back_title
+        MBUTTON MB_COLUMN_3,MB_ROW_2,KEY_ESC,s_back,h_back_title
         dc.w -1
 result_buttons:
         MBUTTON MB_COLUMN_1,MB_ROW_2,'r',s_replay_label,h_replay
         MBUTTON MB_COLUMN_2,MB_ROW_2,'e',s_edit_label,h_edit_again
-        MBUTTON MB_COLUMN_3,MB_ROW_2,KEY_ESC,s_levels_label,h_levels
+        MBUTTON MB_COLUMN_3,MB_ROW_2,KEY_ESC,s_levels,h_levels
         dc.w -1
 new_buttons:
         MBUTTON MB_COLUMN_1,MB_ROW_2,KEY_RETURN,s_create_label,h_create
-        MBUTTON MB_COLUMN_3,MB_ROW_2,KEY_ESC,s_cancel_label,h_no_new
+        MBUTTON MB_COLUMN_3,MB_ROW_2,KEY_ESC,s_cancel,h_no_new
         dc.w -1
 
 ; The .lvl files of Levels, sorted by name; not those deleted in this
@@ -1185,7 +1317,7 @@ scan_levels:
         clr.w entry_count
         move.w #-1,page_read
         move.l #NAMES_SIZE,d0
-        lea s_levels_dir(pc),a0
+        lea s_levels(pc),a0
         lea names,a1
         movea.l resload_base,a2
         jsr resload_ListFiles(a2)
@@ -1227,23 +1359,10 @@ scan_levels:
 .skip:  movea.l next_name,a4
         bra .name
 .listed:
-        move.w selected,d0
-        bpl.s .high
-        moveq #0,d0
-.high:  cmp.w entry_count,d0
-        blo.s .selected
-        move.w entry_count,d0
-        subq.w #1,d0                    ; -1: none
-.selected:
-        move.w d0,selected
-        moveq #0,d1
-        tst.w d0
-        bmi.s .page
-        ext.l d0
-        divu #ROWS,d0
-        move.w d0,d1
-.page:  move.w d1,current_page
-        rts
+        move.w selected,d7
+        bpl.s .kept
+        moveq #0,d7
+.kept:  bra select_entry
 
 ; A4: a name in names -> its place in order, by name with case ignored:
 ; found by halves, the later ones moved up by one.
@@ -1259,7 +1378,6 @@ add_name:
         bsr entry_name
         movea.l a4,a1
         bsr compare_names
-        tst.w d0
         bgt.s .before
         move.w d3,d4
         addq.w #1,d4
@@ -1326,9 +1444,7 @@ load_page:
         bhs.s .done
         move.w d7,d0
         bsr entry_name
-        movem.l d5/d7/a2,-(sp)
         bsr read_entry
-        movem.l (sp)+,d5/d7/a2
         lea ENTRY_SIZE(a2),a2
         addq.w #1,d7
         dbra d5,.entry
@@ -1347,32 +1463,13 @@ read_entry:
         lea E_NAME(a2),a1
 .copy:  move.b (a0)+,(a1)+
         bne.s .copy
-        bsr make_path
-        movea.l resload_base,a3
-        lea path,a0
-        jsr resload_GetFileSize(a3)
-        cmp.l #RECORD_SIZE,d0
-        bne .done
-        lea path,a0
-        lea record_buffer,a1
-        jsr resload_LoadFile(a3)
-        lea record_buffer,a0
-        bsr check_record
+        bsr load_record
         tst.w d0
-        bmi .done
+        bmi.s .done
         move.w d0,E_STYLE(a2)
-        lea record_buffer+R_OBJECTS-8,a0
-        bsr check_objects_chunk
-        bne .done
-        lea record_buffer+R_OBJECTS,a0
-        move.w E_STYLE(a2),d0
-        move.w record_buffer+R_SHAPE,d1
-        ror.w #8,d1                     ; little-endian
-        bsr check_placements
-        bne .done
         lea record_buffer+R_TITLE_TEXT,a0
         lea E_TITLE(a2),a1
-        moveq #24-1,d0
+        moveq #TITLE_SIZE-1,d0
 .title: move.b (a0)+,(a1)+
         dbra d0,.title
         move.b record_buffer+R_MINUTES,E_MINUTES(a2)
@@ -1382,17 +1479,11 @@ read_entry:
 
 ; A2: an entry -> path = "Levels/" and its name.
 make_path:
-        lea s_levels_dir(pc),a0
-        lea path,a1
-.dir:   move.b (a0)+,(a1)+
-        bne.s .dir
-        move.b #'/',-1(a1)
         lea E_NAME(a2),a0
-.name:  move.b (a0)+,(a1)+
-        bne.s .name
-        rts
+        lea path,a1
+        bra levels_path
 
-; A0, A1: names -> D0 < 0, 0 or > 0.
+; A0, A1: names -> D0 < 0, 0 or > 0, the flags set by it.
 compare_names:
         movem.l d1/a0-a1,-(sp)
 .char:  move.b (a0)+,d0
@@ -1461,56 +1552,40 @@ list_draw_rows:
         bhs .paging
         move.w d7,d0
         bsr entry_at
-        moveq #1,d2
+        moveq #1,d5                     ; the row's colour
         cmp.w selected,d7
         bne.s .colour
-        moveq #0,d2
+        moveq #0,d5
 .colour:
-        move.w d2,row_colour
-        move.w d6,d1
+        move.w d6,d1                    ; and its y, kept in D1
         mulu #ROW_H,d1
         add.w #ROW_Y,d1
-        move.w d1,row_y
         moveq #COLUMN_TITLE,d0
-        bsr txt_left
+        bsr .column
+        lea E_NAME(a2),a0               ; a damaged file's name
+        moveq #NAME_MAX,d2
         tst.b E_OK(a2)
-        beq.s .damaged
-        lea E_TITLE(a2),a0
-        moveq #24,d2
-        move.w #COLUMN_TIME-COLUMN_GAP-COLUMN_TITLE,d3
+        beq.s .fit
+        lea E_TITLE(a2),a0              ; else the level's title
+        moveq #TITLE_SIZE,d2
+.fit:   move.w #COLUMN_TIME-COLUMN_GAP-COLUMN_TITLE,d3
         bsr txt_fit
         move.w #COLUMN_TIME,d0
-        move.w row_y,d1
-        move.w row_colour,d2
-        bsr txt_left
+        bsr .column
+        lea s_damaged(pc),a0
+        tst.b E_OK(a2)
+        beq.s .damaged
         moveq #0,d0
         move.b E_MINUTES(a2),d0
-        bsr txt_number
-        move.b #':',(a3)+
-        moveq #0,d0
-        move.b E_SECONDS(a2),d0
-        cmp.w #10,d0
-        bhs.s .seconds
-        move.b #'0',(a3)+
-.seconds:
-        bsr txt_number
+        moveq #0,d2
+        move.b E_SECONDS(a2),d2
+        bsr put_time
         move.w #COLUMN_STYLE,d0
-        move.w row_y,d1
-        move.w row_colour,d2
-        bsr txt_left
+        bsr .column
         move.w E_STYLE(a2),d0
         bsr txt_style
         bra.s .next
 .damaged:
-        lea E_NAME(a2),a0
-        moveq #NAME_MAX,d2
-        move.w #COLUMN_TIME-COLUMN_GAP-COLUMN_TITLE,d3
-        bsr txt_fit
-        move.w #COLUMN_TIME,d0
-        move.w row_y,d1
-        move.w row_colour,d2
-        bsr txt_left
-        lea s_damaged(pc),a0
         bsr txt_str
 .next:  addq.w #1,d7
         addq.w #1,d6
@@ -1544,15 +1619,18 @@ list_draw_rows:
         bsr txt_str
         move.w current_page,d0
         addq.w #1,d0
-        bsr txt_number
-        lea s_of_text(pc),a0
+        bsr put_number
+        lea s_of(pc),a0
         bsr txt_str
         moveq #0,d0
         move.w entry_count,d0
         add.w #ROWS-1,d0
         divu #ROWS,d0
-        bsr txt_number
+        bsr put_number
 .draw:  bra txt_draw
+.column:                                ; D0 x on the row
+        move.w d5,d2
+        bra txt_left
 
 ;============================================================================
 ; The result page after a custom level. D0 = 0: replay; 1: the list;
@@ -1571,11 +1649,11 @@ result_page:
         lea s_saved1(pc),a0
         bsr txt_str
         move.w G_SAVED(a5),d0
-        bsr txt_number
-        lea s_saved2(pc),a0
+        bsr put_number
+        lea s_of(pc),a0
         bsr txt_str
         move.w G_LEMMINGS(a5),d0
-        bsr txt_number
+        bsr put_number
         lea s_saved3(pc),a0
         bsr txt_str
         move.w #RESULT_GRADE_Y,d1
@@ -1591,7 +1669,7 @@ result_page:
         lea s_grade1(pc),a0
         bsr txt_str
         move.w d7,d0
-        bsr txt_number
+        bsr put_number
         lea s_grade2(pc),a0
         bsr txt_str
 .buttons:
@@ -1601,7 +1679,7 @@ result_page:
         bsr txt_str
         movea.l level_header,a0
         move.w H_THRESHOLD(a0),d0
-        bsr txt_number
+        bsr put_number
         lea s_hint2(pc),a0
         bsr txt_str
         bsr txt_draw
@@ -1618,8 +1696,7 @@ result_page:
         move.w d0,-(sp)
         bsr menu_fade_out
         move.w (sp)+,d0
-        lea result_choice(pc),a0
-        move.b 0(a0,d0.w),d0
+        move.b result_choice(pc,d0.w),d0
         ext.w d0
         rts
 
@@ -1836,11 +1913,11 @@ new_draw_fields:
         bsr txt_str
         bsr new_dimensions              ; D2 columns, D3 rows
         move.w d2,d0
-        bsr txt_number
+        bsr put_number
         lea s_by(pc),a0
         bsr txt_str
         move.w d3,d0
-        bsr txt_number
+        bsr put_number
         lea s_right_arrow(pc),a0
         bsr txt_str
         ; fall through
@@ -1901,18 +1978,7 @@ new_create:
         cmp.w #MAX_LEVELS,entry_count
         bhs .refuse
         bsr name_file
-        bsr new_entry                   ; -> D7 its entry, or entry_count
-        lea s_name_exists(pc),a0
-        cmp.w entry_count,d7
-        blo .refuse
-        lea new_file,a0
-        lea path,a1
-        bsr levels_path
-        movea.l resload_base,a2         ; nor a file the list does not show
-        lea path,a0
-        jsr resload_GetFileSize(a2)
-        lea s_name_exists(pc),a0
-        tst.l d0
+        bsr name_taken
         bne .refuse
         bsr new_record
         bsr pointer_busy
@@ -1947,6 +2013,23 @@ name_file:
         bne.s .ext
         rts
 
+; new_file -> Z clear with A0 a message when a level of the list has the
+; name or a file the list does not show has it; path = Levels/new_file.
+name_taken:
+        bsr.s new_entry
+        lea s_name_exists(pc),a0
+        cmp.w entry_count,d7
+        blo.s .done                     ; Z clear
+        lea new_file,a0
+        lea path,a1
+        bsr levels_path
+        movea.l resload_base,a2
+        lea path,a0
+        jsr resload_GetFileSize(a2)
+        lea s_name_exists(pc),a0
+        tst.l d0
+.done:  rts
+
 ; -> D7 the entry named new_file, or entry_count when there is none.
 new_entry:
         moveq #0,d7
@@ -1956,7 +2039,6 @@ new_entry:
         bsr entry_name
         lea new_file,a1
         bsr compare_names
-        tst.w d0
         beq.s .done
         addq.w #1,d7
         bra.s .entry
@@ -1975,11 +2057,11 @@ new_record:
 .clear: clr.l (a0)+
         dbra d0,.clear
         lea record_buffer,a0
-        move.l #'FORM',(a0)
-        move.l #RECORD_SIZE-8,4(a0)
-        move.l #'L2LV',8(a0)
-        move.l #'L2LH',$c(a0)
-        move.l #74,$10(a0)
+        lea record_tags(pc),a1          ; the chunks' tags and sizes
+        moveq #RECORD_TAGS-1,d1
+.tag:   move.w (a1)+,d0
+        move.l (a1)+,0(a0,d0.w)
+        dbra d1,.tag
         lea R_TITLE_TEXT(a0),a1
         lea new_name,a2
         moveq #0,d0
@@ -2013,16 +2095,10 @@ new_record:
         move.b d3,R_VIEW+10(a0)
         lsr.w #8,d3
         move.b d3,R_VIEW+11(a0)
-        move.l #'L2MH',$5e(a0)
-        move.l #6,$62(a0)
         move.b new_style+1,R_STYLE(a0)
         move.b new_shape+1,R_SHAPE(a0)
-        move.l #'L2MP',$6c(a0)
-        move.l #R_CELLS_SIZE,$70(a0)
-        lea R_OBJECTS-8(a0),a1
-        move.l #'L2BO',(a1)+
-        move.l #R_BO_SIZE,(a1)+
-        move.w #R_BO_SIZE/2-1,d0
+        lea R_OBJECTS(a0),a1
+        move.w #OBJECTS_BYTES/2-1,d0
 .empty: move.w #-1,(a1)+
         dbra d0,.empty
         bra skills_fit
@@ -2044,12 +2120,10 @@ menu_open:                              ; background shown, colours black
 
 menu_fade_in:
         movea.l pal_menu,a0
-        movea.l cop_menu,a1
-        GCALL fade
-        rts
-
+        bra.s menu_fade
 menu_fade_out:
         movea.l pal_black,a0
+menu_fade:
         movea.l cop_menu,a1
         GCALL fade
         rts
@@ -2098,14 +2172,14 @@ txt_left:                               ; D0 x, D1 y, D2 colour: left aligned
         move.b d2,(a3)+
         rts
 
-txt_centre:                             ; D1 y: centred on the screen, colour 1
+txt_centre:                             ; D1 y (halved): centred, colour 1
         move.l d2,-(sp)
         moveq #1,d2
         bsr.s txt_centre_colour
         move.l (sp)+,d2
         rts
 
-txt_centre_colour:                      ; D1 y, D2 colour: centred on the screen
+txt_centre_colour:                      ; D1 y (halved), D2 colour: centred
         move.b #7,(a3)+
         clr.b (a3)+
         lsr.w #1,d1
@@ -2143,17 +2217,18 @@ txt_char:                               ; D0 a character the font has
 txt_field:                              ; A0 text of D2 characters, trailing spaces dropped
         movea.l a3,a1
         subq.w #1,d2
-        bmi.s .trim
+        bmi.s txt_trim
 .char:  move.b (a0)+,d0
-        beq.s .trim
+        beq.s txt_trim
         bsr.s txt_char
         dbra d2,.char
-.trim:  cmpa.l a1,a3
+txt_trim:                               ; the spaces back to A1 dropped
+        cmpa.l a1,a3
         beq.s .done
         cmp.b #' ',-1(a3)
         bne.s .done
         subq.l #1,a3
-        bra.s .trim
+        bra.s txt_trim
 .done:  rts
 
 ; A0 text of D2 characters at most, as many as fit D3 pixels in the font
@@ -2178,33 +2253,8 @@ txt_fit:
         dbra d2,.char
         bra.s .trim
 .over:  subq.l #1,a3                    ; this one does not fit
-.trim:  cmpa.l a1,a3
-        beq.s .done
-        cmp.b #' ',-1(a3)
-        bne.s .done
-        subq.l #1,a3
-        bra.s .trim
-.done:  movem.l (sp)+,d4/a4
-        rts
-
-txt_number:                             ; D0 an unsigned word, in decimal
-        and.l #$ffff,d0
-        moveq #0,d2
-.divide:
-        divu #10,d0
-        swap d0
-        add.b #'0',d0
-        move.w d0,-(sp)
-        addq.w #1,d2
-        clr.w d0
-        swap d0
-        tst.w d0
-        bne.s .divide
-.digit: move.w (sp)+,d0
-        move.b d0,(a3)+
-        subq.w #1,d2
-        bne.s .digit
-        rts
+.trim:  movem.l (sp)+,d4/a4
+        bra.s txt_trim
 
 txt_style:                              ; D0 a style: its name, capitalized
         movea.l style_table,a0
@@ -2241,17 +2291,14 @@ draw_edit_label:
         addq.l #2,a3
         bsr copy_out
         dbra d7,.save
-        moveq #BUTTON_COLOUR,d2
+        moveq #LABEL_LEFT,d0            ; the button's face
         move.w #LABEL_TOP,d1
-.clear_row:
-        moveq #LABEL_LEFT,d0
-.clear: bsr set_pixel
-        addq.w #1,d0
-        cmp.w #LABEL_RIGHT+1,d0
-        bne.s .clear
-        addq.w #1,d1
-        cmp.w #LABEL_BOTTOM+1,d1
-        bne.s .clear_row
+        moveq #LABEL_RIGHT+1-LABEL_LEFT,d2
+        moveq #LABEL_BOTTOM+1-LABEL_TOP,d3
+        moveq #BUTTON_COLOUR,d4
+        movea.w #PLANE,a3
+        movea.w #5-1,a4
+        bsr plane_rect
         lea label_pixels,a2
         lea letters(pc),a3
         moveq #LETTERS-1,d7
@@ -2379,7 +2426,7 @@ set_pixel:                              ; D0 x, D1 y, D2 colour, A0 bitmap
 ;============================================================================
 ; Texts
 
-s_levels_dir:     dc.b "Levels",0
+s_levels:         dc.b "Levels",0
 s_list_title:     dc.b "Custom Levels",0
 s_list_help:      dc.b "Click a level, or use the cursor keys",0
 s_no_level:       dc.b "There is no level yet: make one with New",0
@@ -2398,10 +2445,9 @@ h_no_new:         dc.b "Back to the list without a new level (Esc)",0
 s_play_label:     dc.b "Play",0
 s_new_label:      dc.b "New",0
 s_create_label:   dc.b "Create",0
-s_cancel_label:   dc.b "Cancel",0
 s_new_title:      dc.b "New Level",0
 s_new_credit:     dc.b "Editor "
-                  EDITOR_VERSION
+s_version_long:   EDITOR_VERSION        ; also in the bar's version text
                   dc.b " by Timo Heimonen",0
 s_name_label:     dc.b "File",0
 s_style_label:    dc.b "Style",0
@@ -2415,16 +2461,14 @@ s_need_name:      dc.b "Type a name for the file first",0
 s_list_full:      dc.b "The list is full: 512 levels",0
 s_name_exists:    dc.b "There is a level of this name already",0
 s_edit_label:     dc.b "Edit",0
-s_back_label:     dc.b "Back",0
 s_empty1:         dc.b "There are no levels in",0
 s_empty2:         dc.b "the Levels directory yet",0
 s_damaged:        dc.b "damaged",0
 s_previous:       dc.b "< Previous",0
 s_next:           dc.b "Next >",0
 s_page_text:      dc.b "Page ",0
-s_of_text:        dc.b " of ",0
+s_of:             dc.b " of ",0
 s_saved1:         dc.b "You saved ",0
-s_saved2:         dc.b " of ",0
 s_saved3:         dc.b " Lemmings",0
 s_none_saved:     dc.b "No Lemmings were saved",0
 s_grade1:         dc.b "Grade ",0
@@ -2432,7 +2476,6 @@ s_grade2:         dc.b " of 3",0
 s_hint1:          dc.b "Best grade: up to ",0
 s_hint2:          dc.b " lost",0
 s_replay_label:   dc.b "Replay",0
-s_levels_label:   dc.b "Levels",0
 s_result_help:    dc.b "Replay it, edit it, or back to the list",0
 s_wrong_game:     dc.b "Editor: this is not the supported game",0
 s_no_chip:        dc.b "Editor: not enough chip memory from the slave",0
@@ -2489,76 +2532,12 @@ hunk3:          ds.l 1
 chip_base:      ds.l 1
 chip_size:      ds.l 1
 
-g_sound:        ds.l 1
-g_stop_sound:   ds.l 1
-g_pointer:      ds.l 1
-g_wait_press:   ds.l 1
-g_init_play:    ds.l 1
-g_load_style:   ds.l 1
-g_select_level: ds.l 1
-g_count:        ds.l 1
-g_protection:   ds.l 1
-g_copper:       ds.l 1
-g_fade:         ds.l 1
-g_unpack_menu:  ds.l 1
-g_show_menu:    ds.l 1
-g_restore_rect: ds.l 1
-g_text:         ds.l 1
-g_sprite:       ds.l 1
-r_title:        ds.l 1
-r_build:        ds.l 1
-r_result:       ds.l 1
-r_escape_test:  ds.l 1
-r_after_tab:    ds.l 1
-g_video:        ds.l 1
-r_release:      ds.l 1
-r_opening:      ds.l 1
-r_opened:       ds.l 1
-font_widths:    ds.l 1
-r_crosses_done: ds.l 1
-r_title_again:  ds.l 1
-        ifd PAL_RELEASE
-r_next_column:  ds.l 1
-        endif
-level_header:   ds.l 1
-style_table:    ds.l 1
-pal_black:      ds.l 1
-pal_menu:       ds.l 1
-cop_title:      ds.l 1
-cop_menu:       ds.l 1
-ptr_normal:     ds.l 1
-ptr_busy:       ds.l 1
+hunk0_addresses: ds.l HUNK0_COUNT
+hunk1_addresses: ds.l HUNK1_COUNT
+
 title_bitmap:   ds.l 1
-g_wait_play:    ds.l 1
-g_scroll:       ds.l 1
-g_copy_view:    ds.l 1
-g_view_desc:    ds.l 1
-g_objects:      ds.l 1
-g_redraw:       ds.l 1
-g_buttons:      ds.l 1
-g_key:          ds.l 1
-g_play_pointer: ds.l 1
-g_planes:       ds.l 1
-g_wait_frame:   ds.l 1
-g_music_off:    ds.l 1
-g_music_on:     ds.l 1
-g_idle:         ds.l 1
-r_loop_rest:    ds.l 1
-scroll_flags:   ds.l 1
-pal_play:       ds.l 1
-ptr_cross:      ds.l 1
 bar_copper:     ds.l 1
 bar_bitmap:     ds.l 1
-g_find_type:    ds.l 1
-g_expand_objects: ds.l 1
-g_border_clear: ds.l 1
-placements:     ds.l 1
-g_picker:       ds.l 1
-g_panel:        ds.l 1
-g_panel_slot:   ds.l 1
-g_panel_count:  ds.l 1
-g_clock:        ds.l 1
-g_frame_end:    ds.l 1
 
 ; The state block, with its fields at fixed offsets, for external tools
 ; that read it from memory (its address follows "L2ED").
@@ -2583,7 +2562,7 @@ brush_steel:    ds.b 1                  ; +20 the brush writes cell bit 28
 leaving:        ds.b 1                  ; +21 the edit view ends after this pass
 brush_index:    ds.w 1                  ; +22 the brush's piece, -1 a single tile
 sheet_top:      ds.w 1                  ; +24 the pieces page's first row
-cells_written:  ds.w 1                  ; +26 cells the tools changed
+                ds.w 1                  ; +26 not used
 mode:           ds.b 1                  ; +28 0 Terrain, 1 Objects
 dragging:       ds.b 1                  ; +29 the selected object follows the pointer
 obj_type:       ds.w 1                  ; +30 the type a click places
@@ -2618,10 +2597,7 @@ page_read:      ds.w 1                  ; +134 the list's page in entries, or -1
 anim_tick:      ds.w 1                  ; +136 passes the preview or the object
                                         ; page has animated; frame = tick mod frames
 
-play_style:     ds.w 1
 names_left:     ds.w 1
-row_y:          ds.w 1
-row_colour:     ds.w 1
 next_name:      ds.l 1
 path:           ds.b 64
 label_pixels:   ds.b (14+14+6+14)*LETTER_ROWS

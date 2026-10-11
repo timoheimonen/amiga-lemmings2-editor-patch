@@ -1,4 +1,4 @@
-; Lemmings 2: The Tribes In-Game Level Editor V1.2
+; Lemmings 2: The Tribes In-Game Level Editor V1.2.1
 ; Copyright (c) 2026 Timo Heimonen <timo.heimonen@proton.me>
 ; Licensed under the MIT License. See the LICENSE file for details.
 ;
@@ -46,9 +46,7 @@ MB_DARK         equ 29
 MB_DIM_FACE     equ 28
 MB_DIM_LIGHT    equ 29
 MB_DIM_DARK     equ 15
-MENU_ROW        equ 40          ; the menu screen: 320x200, five planes
-MENU_PLANE      equ 8000
-MENU_PLANES     equ 5
+MENU_PLANES     equ 5           ; the menu screen: 320x200, five planes
 HELP_H          equ 12
 HELP_COLOUR     equ 1           ; colours of the text routine's font
 MESSAGE_COLOUR  equ 0
@@ -82,22 +80,17 @@ menu_page:
 
 ; Every button of the page.
 menu_draw:
-        movea.l menu_table,a2
-        moveq #0,d6
-.face:  tst.w (a2)
-        bmi.s .labels
-        bsr button_face
-        lea MB_SIZE(a2),a2
-        addq.w #1,d6
-        bra.s .face
-.labels:
         bsr txt_start
         movea.l menu_table,a2
-.label: tst.w (a2)
+        moveq #0,d6
+.button:
+        tst.w (a2)
         bmi.s .draw
+        bsr button_face
         bsr button_label
         lea MB_SIZE(a2),a2
-        bra.s .label
+        addq.w #1,d6
+        bra.s .button
 .draw:  bra txt_draw
 
 ; D0 the buttons to dim: those that change are drawn again.
@@ -297,93 +290,21 @@ menu_help_line:
         GCALL restore_rect
         movem.l (sp)+,d2/a0
         bsr txt_start
-        move.b #7,(a3)+
-        clr.b (a3)+
-        move.b #HELP_Y/2,(a3)+
-        move.b #320/2,(a3)+
-        move.b #200/2,(a3)+
-        move.b #5,(a3)+
-        move.b #8,(a3)+
-        move.b d2,(a3)+
+        move.w #HELP_Y,d1
+        bsr txt_centre_colour
         bsr txt_str
         bra txt_draw
 .done:  rts
 
 ; D0 x, D1 y, D2 width, D3 height, D4 colour: a filled rectangle on the
-; menu screen. Rows are the same in every plane: a mask for the first and
-; the last byte, whole bytes between them.
+; menu screen. Preserves all.
 fill_rect:
-        movem.l d0-d7/a0-a2,-(sp)
+        movem.l a0/a3-a4,-(sp)
         movea.l menu_bitmap,a0
-        mulu #MENU_ROW,d1
-        adda.l d1,a0
-        move.w d0,d1
-        lsr.w #3,d1
-        adda.w d1,a0                    ; the first byte of the first row
-        move.w d0,d5
-        add.w d2,d5
-        subq.w #1,d5                    ; the last x
-        move.w d5,d7
-        lsr.w #3,d7
-        sub.w d1,d7                     ; bytes in a row - 1
-        and.w #7,d0
-        moveq #-1,d1
-        lsr.b d0,d1                     ; the first byte's mask
-        and.w #7,d5
-        moveq #7,d0
-        sub.w d5,d0
-        moveq #-1,d2
-        lsl.b d0,d2                     ; the last byte's mask
-        tst.w d7
-        bne.s .planes
-        and.b d2,d1                     ; one byte: both masks
-.planes:
-        moveq #MENU_PLANES-1,d6
-.plane: movea.l a0,a1
-        move.w d3,d5
-        subq.w #1,d5
-.row:   movea.l a1,a2
-        btst #0,d4
-        beq.s .clear
-        tst.w d7
-        bne.s .set_bytes
-        or.b d1,(a2)
-        bra.s .next_row
-.set_bytes:
-        or.b d1,(a2)+
-        move.w d7,d0
-        subq.w #2,d0
-        bmi.s .set_last
-.set:   st (a2)+
-        dbra d0,.set
-.set_last:
-        or.b d2,(a2)
-        bra.s .next_row
-.clear: not.b d1
-        not.b d2
-        tst.w d7
-        bne.s .clear_bytes
-        and.b d1,(a2)
-        bra.s .cleared
-.clear_bytes:
-        and.b d1,(a2)+
-        move.w d7,d0
-        subq.w #2,d0
-        bmi.s .clear_last
-.zero:  sf (a2)+
-        dbra d0,.zero
-.clear_last:
-        and.b d2,(a2)
-.cleared:
-        not.b d1
-        not.b d2
-.next_row:
-        lea MENU_ROW(a1),a1
-        dbra d5,.row
-        lea MENU_PLANE(a0),a0
-        lsr.w #1,d4                     ; the colour's next bit
-        dbra d6,.plane
-        movem.l (sp)+,d0-d7/a0-a2
+        movea.w #PLANE,a3
+        movea.w #MENU_PLANES-1,a4
+        bsr plane_rect
+        movem.l (sp)+,a0/a3-a4
         rts
 
 ;============================================================================

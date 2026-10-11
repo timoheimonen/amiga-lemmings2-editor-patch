@@ -1,5 +1,17 @@
 # Changelog
 
+## V1.2.1 (2026-10-11)
+
+- A release rate or best grade's limit below zero, in a level file made
+  elsewhere, can now be changed: - brings it to the top of the range,
+  as it does a value above the range. Before, neither button changed it.
+- A level file made elsewhere is listed as damaged when one of its
+  objects is drawn partly left of or above the map: the game would write
+  those parts far from the map, into its packed levels or its code.
+- The editor is smaller and the terrain brush faster: repeated code is
+  shared and unused code is gone (38552 bytes instead of 42040 for the US
+  release).
+
 ## V1.2 (2026-10-07)
 
 - The PAL release of the game (SPS 0351) is supported besides the US

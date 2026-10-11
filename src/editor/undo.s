@@ -1,4 +1,4 @@
-; Lemmings 2: The Tribes In-Game Level Editor V1.2
+; Lemmings 2: The Tribes In-Game Level Editor V1.2.1
 ; Copyright (c) 2026 Timo Heimonen <timo.heimonen@proton.me>
 ; Licensed under the MIT License. See the LICENSE file for details.
 ;
@@ -263,6 +263,7 @@ history_shown:
         move.l a0,-(sp)
         bsr dirty_from_saved
         bsr objects_apply               ; the play map and the objects
+        bsr objects_scan
         bsr level_shown                 ; the header, counts, clock, panel
         st fields_changed
         movea.l (sp)+,a0
@@ -301,10 +302,9 @@ test_ask:
         lea test_question_widgets(pc),a0
         bsr question_open
         lea question_text,a3
-        lea s_warning(pc),a0
-        bsr put_str
         movea.l (sp)+,a0
-        bsr put_str
+        lea s_warning(pc),a1
+        bsr put_pair
         lea s_test_anyway(pc),a0
         bra put_str
 
@@ -312,7 +312,7 @@ test_ask:
 test_go:
         cmp.b #PAGE_QUESTION,edit_page
         bne.s .wanted
-        bsr close_question
+        bsr mode_widgets
 .wanted:
         st test_wanted
         rts
@@ -321,20 +321,16 @@ test_go:
 ; the list's Menu leaves it, and the record played.
 test_flow:
         sf test_wanted
-        move.w G_SCROLL_X(a5),resume_x
-        move.w G_SCROLL_Y(a5),resume_y
-        bsr view_fade_out
-        bsr bar_hide
-        move.l g_idle,G_CALLBACK(a5)
+        bsr view_leave
         GCALL music_off
-        move.w #MENU_MAX_Y,G_CURSOR_MAX_Y(a5)
         clr.b screen
         sf editing
         st testing
         ; fall through
 
-; The record being edited played through the custom play path.
-test_play:
+; The record being edited built through the custom play path: test played,
+; or the edit view built again (resuming).
+build_record:
         lea edit_record,a0
         lea record_buffer,a1
         bsr copy_record
@@ -350,7 +346,7 @@ test_play:
 ; editor's question when there are unsaved changes).
 test_result:
         tst.w d0
-        beq.s test_play
+        beq.s build_record
         sf testing
         cmp.w #RESULT_EDIT,d0
         beq.s .edit
