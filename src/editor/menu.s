@@ -1,4 +1,4 @@
-; Lemmings 2: The Tribes In-Game Level Editor V1.2.1
+; Lemmings 2: The Tribes In-Game Level Editor V1.2.2
 ; Copyright (c) 2026 Timo Heimonen <timo.heimonen@proton.me>
 ; Licensed under the MIT License. See the LICENSE file for details.
 ;
@@ -48,6 +48,8 @@ MB_DIM_LIGHT    equ 29
 MB_DIM_DARK     equ 15
 MENU_PLANES     equ 5           ; the menu screen: 320x200, five planes
 HELP_H          equ 12
+HELP_W          equ 316         ; the help line's room: a longer text would
+                                ; wrap below the screen and past its bitmap
 HELP_COLOUR     equ 1           ; colours of the text routine's font
 MESSAGE_COLOUR  equ 0
 MENU_MESSAGE_FRAMES equ 150     ; three seconds
@@ -292,7 +294,9 @@ menu_help_line:
         bsr txt_start
         move.w #HELP_Y,d1
         bsr txt_centre_colour
-        bsr txt_str
+        moveq #127,d2                   ; as much as fits, a file's name in a
+        move.w #HELP_W,d3               ; message too
+        bsr txt_fit
         bra txt_draw
 .done:  rts
 

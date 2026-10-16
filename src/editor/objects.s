@@ -1,4 +1,4 @@
-; Lemmings 2: The Tribes In-Game Level Editor V1.2.1
+; Lemmings 2: The Tribes In-Game Level Editor V1.2.2
 ; Copyright (c) 2026 Timo Heimonen <timo.heimonen@proton.me>
 ; Licensed under the MIT License. See the LICENSE file for details.
 ;
@@ -79,6 +79,9 @@ POOL_END        equ 4           ; the pool's end mark
 LINKS_MAX       equ 64          ; $C74E
 ENTRANCES_MAX   equ 4           ; $C8F6
 SWITCHES_MAX    equ 32          ; $C954, $C96A
+SWINGS_MAX      equ 5           ; the swing tables $4021C8 and $402254 ($2EAE)
+ROPE_MAX        equ 7           ; a swing's copies down: its rope inside its
+                                ; 320 bytes there ($2F8C)
 
 ; Behaviour ids ($C7D4)
 B_ENTRANCE      equ 2
@@ -762,6 +765,7 @@ objects_scan:
         clr.w link_count
         clr.w entrance_count
         clr.w exit_count
+        clr.w swing_count
         clr.w switch_count
         clr.w target_count
         move.w #-1,open_teleporter
@@ -804,8 +808,11 @@ objects_scan:
         move.b T_ROLE(a0),d0
         move.b d0,0(a2,d7.w)
         cmp.b #ROLE_EXIT,d0
-        bne .behaviour
+        bne .swing
         addq.w #1,exit_count
+.swing: cmp.b #ROLE_SWINGING,d0
+        bne .behaviour
+        addq.w #1,swing_count
 .behaviour:
         movea.l T_DEF(a0),a1
         move.w DEF_BEHAVIOUR(a1),d0
@@ -993,7 +1000,8 @@ objects_apply:
         rts
 
 ; D0 a place, D1..D5 its new type, x, y and repeat counts (type -1:
-; empty). Written when the game can take it (the pool) and the object stays
+; empty). Written when the game can take it (the pool, at most five
+; swinging objects with ropes of up to 7 copies down) and the object stays
 ; inside the map, and the game's objects are made again; otherwise the old
 ; values stay and the reason is shown. -> Z set when done. Preserves all.
 commit_slot:
@@ -1010,6 +1018,16 @@ commit_slot:
         lea s_pool_full(pc),a0
         cmp.l #POOL_SIZE,pool_total
         bhi .refuse
+        lea s_swings_full(pc),a0        ; the game keeps five swings, each
+        cmp.w #SWINGS_MAX,swing_count   ; with a rope of up to 7
+        bhi .refuse
+        lea slot_role,a1
+        cmp.b #ROLE_SWINGING,0(a1,d7.w)
+        bne.s .inside
+        lea s_rope_long(pc),a0
+        cmp.w #ROPE_MAX,d5
+        bhi .refuse
+.inside:
         lea s_no_room(pc),a0
         move.w d7,d0
         bsr slot_inside
@@ -2358,6 +2376,8 @@ s_types_info:   dc.b "Object types of this style: ",0
 s_deleted:      dc.b "Deleted object ",0
 s_no_room:      dc.b "No room: the object would leave the map",0
 s_pool_full:    dc.b "No room: the game's object memory is full",0
+s_swings_full:  dc.b "No room: the game takes five swinging objects",0
+s_rope_long:    dc.b "No room: a swing's rope can be 7 long at most",0
 s_slots_full:   dc.b "All 64 places for objects are used",0
 s_no_types:     dc.b "This style has no objects",0
                 even
@@ -2382,6 +2402,7 @@ help_build:     ds.b 64
                 even
 entrance_count: ds.w 1
 exit_count:     ds.w 1
+swing_count:    ds.w 1
 switch_count:   ds.w 1
 target_count:   ds.w 1
 open_teleporter: ds.w 1

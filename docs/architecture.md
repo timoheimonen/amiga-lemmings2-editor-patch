@@ -35,7 +35,7 @@ its screens and its tools at a small set of hooks.
   are the game's routines, which the editor calls with the game's own
   registers and globals.
 - **Few patch points, each one checked.** The slave changes 6 places in
-  the game for the start from hard disk, the editor 10 places for its
+  the game for the start from hard disk, the editor 12 places for its
   hooks; a few more are changed only while they are needed. Every
   patched instruction is checked against its original bytes first, and
   another version of the game is refused.
@@ -184,6 +184,7 @@ flowchart LR
         p4["Play keys: Esc"]
         p5["Level start:<br/>entrances opening"]
         p6["Releasing a lemming"]
+        p9["A lemming on a cell:<br/>its effect or link"]
         p7["End of play"]
     end
     subgraph ED["Editor"]
@@ -196,6 +197,7 @@ flowchart LR
         h5["hook_tab<br/>keeps PAL in a custom level"]
         h6["hook_escape<br/>from test play back to the edit view"]
         h7["hook_opening, hook_release<br/>a level without an entrance"]
+        h10["hook_effect, an rts for trap #15<br/>cells without their object do nothing"]
         h8["hook_play_end<br/>the editor's result page"]
     end
     t1 --> h1
@@ -207,12 +209,13 @@ flowchart LR
     p4 --> h6
     p5 --> h7
     p6 --> h7
+    p9 --> h10
     p7 --> h8
 
     classDef game fill:#dbe9f6,stroke:#3b6ea5,color:#111
     classDef editor fill:#fde8c8,stroke:#c07a12,color:#111
-    class t1,t2,p1,p2,p3,p4,p5,p6,p7,p8 game
-    class h1,h2,h3,h4,h5,h6,h7,h8,h9 editor
+    class t1,t2,p1,p2,p3,p4,p5,p6,p7,p8,p9 game
+    class h1,h2,h3,h4,h5,h6,h7,h8,h9,h10 editor
 ```
 
 The editor's permanent hooks, patched once at init:
@@ -228,6 +231,8 @@ The editor's permanent hooks, patched once at init:
 | `hook_escape` | `$00BD8` | `$00BD0` | Esc in play starts the level again | In test play, goes back to the edit view with the editor's state as before the test |
 | `hook_opening` | `$001EA` | `$001E2` | The entrances open at the level's start | With no entrance, the opening ends at once (the game's loop over the entrances assumes at least one) |
 | `hook_release` | `$09AD6` | `$0986E` | A lemming is released | With no entrance, none is |
+| `hook_effect` | `$09DC4` | `$09B5A` | A lemming is on a cell with a direct effect | An effect over 2, which only a file can hold, does nothing (the game's jump table has three: exit, water, ice) |
+| an `rts` | `$09E7E` | `$09C14` | A lemming is on a cell with a link | The `trap #15` that a link without a contact effect ran, or a link no object takes, returns: such a cell does nothing, where the game stopped |
 | `hook_play_end` | `$00336` | `$0032E` | Play ends | A custom level goes to the editor's result page; Practice and the tribes' levels go on as in the game, so the tribes' progress is only ever written by the game's own levels |
 
 Patched only while they are needed:

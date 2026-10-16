@@ -1,5 +1,28 @@
 # Changelog
 
+## V1.2.2 (2026-10-16)
+
+- More level files made elsewhere are listed as damaged, where the game
+  would write over its own data or stop: objects whose copies reach below
+  the map past the game's map memory, objects that need more than the
+  game's 4096 bytes of object memory, more than five swinging objects, or
+  a rope of more than 7 copies. A level an earlier version saved with
+  more swinging objects or a longer rope is listed as damaged too: it can
+  be renamed or deleted, not opened.
+- The Objects mode refuses a sixth swinging object and a rope of more
+  than 7 copies, and the help line says why: the game keeps five swinging
+  objects with ropes of up to 7.
+- A map cell with an effect or a link but without its object, which only
+  a level file made elsewhere can hold, does nothing. Before, a lemming
+  that reached it stopped the game.
+- The release rate goes up to 21, the fastest: one lemming every pass.
+  Before, it stopped at 20.
+- Long names fit their place: "Deleted" with a long file name on the
+  list's help line no longer runs past the screen, and the names on the
+  New, Rename and Delete pages no longer push ".lvl" onto the next line.
+- The user's guide says to keep the `Levels` directory: without it,
+  Create on the New page stops WHDLoad with an error.
+
 ## V1.2.1 (2026-10-11)
 
 - A release rate or best grade's limit below zero, in a level file made
