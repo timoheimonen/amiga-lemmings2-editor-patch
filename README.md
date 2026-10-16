@@ -123,14 +123,17 @@ the files to share your levels.
   more `.lvl` files, which of them are listed depends on WHDLoad's order. A
   page of the list reads its levels' files when it is shown, which takes a
   moment when WHDLoad has to fetch them from the disk.
-- Keep only level files in `Levels`: New or Rename to the name of a
-  directory there stops WHDLoad with an error.
+- Keep the `Levels` directory, and only level files in it: without the
+  directory, Create on the New page stops WHDLoad with an error, and so
+  does New or Rename to the name of a directory there.
 - With WHDLoad's write cache on (without `NOWRITECACHE`), more than 128
   deletions and renames in one session bring the 129th name back in the
   list as damaged until WHDLoad quits.
 - A level file from elsewhere is checked for what makes the game crash
-  (it is then listed as damaged); objects whose repeated copies reach past
-  the map are not checked, as the game itself does not.
+  or write over its own data (it is then listed as damaged); objects
+  whose repeated copies reach past the map's right edge, or below it
+  but still inside the game's map memory, are not checked, as the game
+  itself does not.
 - F10 quits at once, also with unsaved changes.
 
 ## Build
@@ -165,8 +168,9 @@ Python.
   both).
 - `src/editor/editor.s` checks the game's original bytes at its patch points
   and hooks the title screen (EDIT in place of the crossed-out QUIT), the
-  end of play, the play keys and the level start. The list, the New, Rename
-  and Delete pages and the result page are drawn on the game's own menu
+  end of play, the play keys and the level start; a map cell with an
+  effect or a link but without its object does nothing. The list, the
+  New, Rename and Delete pages and the result page are drawn on the game's own menu
   screen. A custom level is the game's own level record, built and played
   by the game's own code in its own style, with 60 lemmings, and it never
   touches the tribes' progress.

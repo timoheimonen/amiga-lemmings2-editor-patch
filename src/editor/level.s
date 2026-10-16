@@ -1,4 +1,4 @@
-; Lemmings 2: The Tribes In-Game Level Editor V1.2.1
+; Lemmings 2: The Tribes In-Game Level Editor V1.2.2
 ; Copyright (c) 2026 Timo Heimonen <timo.heimonen@proton.me>
 ; Licensed under the MIT License. See the LICENSE file for details.
 ;
@@ -85,7 +85,8 @@ R_HEAD_STYLE    equ $48         ; LE16, equal to L2MH's style
 R_VIEW          equ $4a         ; six LE16: scroll x, y, lower x, y, upper x, y
 R_LIMITS        equ R_VIEW+4    ; the four limits
 R_LOST          equ $56         ; LE16: the best grade's limit
-R_RATE          equ $58         ; LE16: the release interval is 21 - rate
+R_RATE          equ $58         ; LE16: the release interval is 22 - rate
+                                ; passes, at least 1 ($9AEE)
 
 ; The editor's ranges
 SKILL_SLOTS     equ 8
@@ -97,7 +98,7 @@ SKILL_BLOCKER   equ 51          ; only in the Classic style
 TIME_STEP       equ 15          ; seconds
 TIME_MIN        equ 15
 TIME_MAX        equ 9*60+45     ; the clock shows one digit of minutes
-RATE_MAX        equ 20          ; interval 1
+RATE_MAX        equ 21          ; interval 1, the fastest
 LOST_MAX        equ 59          ; of the 60 lemmings
 SKILL_AREA      equ 256         ; the panel's eight slots, 32 pixels each
 TITLE_SIZE      equ 24

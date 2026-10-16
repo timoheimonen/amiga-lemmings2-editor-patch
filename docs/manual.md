@@ -19,7 +19,9 @@ saved positions are never changed.
   own disk images of the US or the PAL release (see the README): the
   slave `Lemmings2.slave`, its icon `Lemmings2.info`, the game's files
   in `data/`, the editor in `data/Editor` and `data/EditorTiles`, and a
-  `Levels` directory for your levels.
+  `Levels` directory for your levels. Keep the directory: without it the
+  list is empty, and Create on the New page makes WHDLoad stop with an
+  error, as it cannot write the file.
 - Start it with the tool types **`PRELOAD NOWRITECACHE`**. With
   `NOWRITECACHE` a saved or deleted level is on the disk when the editor
   says so; each write then takes a few seconds with the screen blank.
@@ -48,10 +50,12 @@ name, nine to a page, each with its title, time and style. A file that is
 not one valid level is listed by its file name as **damaged**: it can be
 renamed or deleted, but not played or edited. A level file made elsewhere
 is damaged too when it holds something the game cannot take: a skill the
-game does not have, a start view or scroll limits outside the map, or an
+game does not have, a start view or scroll limits outside the map; an
 object of a type the style does not have, far outside the map, off the
-grid of 16x8-pixel cells, drawn partly left of or above the map, or with
-more than 40 copies.
+grid of 16x8-pixel cells, drawn partly left of, above or below the map, or
+with more than 40 copies; more objects than the game's object memory
+holds; or more than five swinging objects, or a rope of more than 7
+copies.
 
 | Button | Key | What it does |
 | --- | --- | --- |
@@ -120,14 +124,14 @@ and the **editor bar** below it:
 Terrain Objects Param Test          Undo Redo Save Menu
 (the tools of the mode)
 (the status: what is under the pointer)              Unsaved
-(help: the button under the pointer and its key, or a message) V1.2.1 by Timo Heimonen
+(help: the button under the pointer and its key, or a message) V1.2.2 by Timo Heimonen
 ```
 
 The active mode and the tools that are on are lit; a button that does
 nothing at the moment is dark; "Unsaved" shows that the level has changes
 that are not saved. Hold the pointer over a button to see what it does
 and its key. The editor's version is at the right end of the help line,
-in blue, when the help leaves room for it (shortened to "V1.2.1 by Timo
+in blue, when the help leaves room for it (shortened to "V1.2.2 by Timo
 H." when only that fits); the help always comes first.
 
 **Scrolling**: move the pointer to the left, right or top edge of the
@@ -180,6 +184,12 @@ teleporter without a partner or a switch without a target. Saving and
 test play say so too. A level without an entrance plays with no lemming
 coming out until its time is up.
 
+What the game cannot take is refused, and the help line says why: an
+object that would leave the map, more objects than the game's object
+memory holds, a sixth swinging object, and a rope of more than 7 copies
+one under another (the game keeps five swinging objects with ropes of up
+to 7).
+
 ### Param (L): the level's parameters
 
 | Button | Key | What it does |
@@ -192,7 +202,7 @@ coming out until its time is up.
 | Start | V | Start the level with the view as it is now; a frame shows the start view |
 | Limits | Shift+V | Set how far the level scrolls, which is also where its lemmings can go (below); a dotted frame shows it |
 | Time - + | [ and ] | The time, in quarter minutes, 0:15 to 9:45 |
-| Rate - + | Shift+R and R | How fast the lemmings come out, 0 to 20 |
+| Rate - + | Shift+R and R | How fast the lemmings come out, 0 to 21 (the fastest) |
 | Lost - + | Shift+G and G | The best grade's limit: how many lemmings may be lost for grade 3, 0 to 59 |
 
 A level always has 60 lemmings: the game takes the number from the

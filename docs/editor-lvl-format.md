@@ -151,7 +151,7 @@ only the scrolling. With the whole map's limits the box is *x* 17 ..
 | `$3E` | `$0052` | LE16 | Highest scroll *x* | Also its right edge, + 335 | By the rule below |
 | `$40` | `$0054` | LE16 | Highest scroll *y* | Also its bottom edge, + 184 | By the rule below |
 | `$42` | `$0056` | LE16 | Grading | Signed: the lemmings that may be lost for the best grade. See [grading](#grading) | 0..59 ("Lost"); 0 in a new level |
-| `$44` | `$0058` | LE16 | Release rate | Signed. See [the release rate](#the-release-rate) | 0..20 ("Rate"); 0 in a new level |
+| `$44` | `$0058` | LE16 | Release rate | Signed. See [the release rate](#the-release-rate) | 0..21 ("Rate"); 0 in a new level |
 | `$46` | `$005A` | 4 | Unused | 0 | Kept |
 
 ### The start view and the scroll limits
@@ -205,7 +205,7 @@ least one pass later: 21 and more release a lemming every pass.
 | 30 | 1 pass |
 | -10 (`$FFF6`) | 32 passes |
 
-The original levels use 0, 5, 10, 12 and 15. The editor offers 0..20 as
+The original levels use 0, 5, 10, 12 and 15. The editor offers 0..21 as
 "Rate".
 
 ### Grading
@@ -289,8 +289,11 @@ border cells or the cells past the map, so they keep what the file has (0
 in a new level). Interaction bits in the file act without an
 object: a direct effect works as such (Medieval 7 and 8 carry the cells of
 exits that were moved, and three of Medieval 7's still save lemmings), a
-link number refers to whatever object gets that link, and a direct effect
-3..63 breaks the game.
+link number refers to whatever object gets that link; a link that no
+object gets or one without a contact effect, and a direct effect 3..63,
+do nothing in the editor's install (in the game alone, a lemming that
+reaches such a cell stops the game, or with effect 3 is saved as at an
+exit).
 
 **Tiles.** Most of the original levels' tiles come from the style's
 terrain pieces; tiles past the pieces' ones are the frames of the style's
@@ -324,9 +327,10 @@ after it, as its type, its origin and repeats 0, 0. Its origin is on
 the cell grid, and its cells stay inside the part of the map the editor
 edits, 16 pixels from each edge. A moved object keeps its place and gets
 its new origin; a deleted one becomes five `-1` words, so the other objects
-keep their places. The repeats are 0..40, and an edit that would take an
-object out of that part of the map or make the built objects larger than
-4096 bytes is refused.
+keep their places. The repeats are 0..40, and 0..7 down for a swinging
+object, and an edit that would take an object out of that part of the
+map, make the built objects larger than 4096 bytes or make a sixth
+swinging object is refused.
 
 **Order matters.** The objects are built in placement order, and later
 ones write over the cells of earlier ones. The order also numbers things:
@@ -347,7 +351,8 @@ it, and it lists a file with an origin off it as damaged.
 down: the [type tables](#object-types) give the axes each type uses, and
 a count on another axis is ignored. A count *n* of 0 or more gives *n* + 1
 copies, a negative count one copy, and -32768 gives 32769. The original
-levels use 0..18 across and 0..16 down; the editor allows 0..40.
+levels use 0..18 across and 0..16 down; the editor allows 0..40, and 0..7
+down for a swinging object.
 
 **Left of and above the map.** The type tables' *Offset* gives where a
 type's first cells lie from its origin, and every other cell lies right of
@@ -362,8 +367,11 @@ offset brings their cells into the map. The editor's placements keep it,
 and it lists a file that breaks it as damaged.
 
 **Below the map.** A part written past the map's last row goes on in the
-1971 cells and past them into the game's other data, without clipping.
-The original levels stay inside the 1971 cells.
+1971 cells and past them into the game's other data, without clipping:
+as left of the map, into the packed original levels too, and the game
+then stops when it next starts one of those levels. The original levels
+stay inside the 1971 cells, and the editor lists a file whose objects,
+with their copies, reach past them as damaged.
 
 **Limits.**
 
@@ -371,18 +379,22 @@ The original levels stay inside the 1971 cells.
 - At most 64 links in a level: the cells of objects beyond the 64th link
   get no link.
 - The built objects take 22 bytes each, 8 more for each part and repeat,
-  and 4 at the end, and must fit 4096 bytes; nothing checks it, and past
-  it the game writes over its own data. The original levels need at most
-  2548.
+  and 4 at the end, and must fit 4096 bytes; the game does not check it,
+  and past it writes over its own data and stops. The original levels
+  need at most 2548; the editor refuses more and lists a file that needs
+  more as damaged.
 - One to four entrances: a fifth and later ones are ignored, and a level
   without an entrance releases no lemming in the editor and breaks the
   unpatched game.
 - At most 32 switches and 32 switch targets (see [switches and
   teleporters](#switches-and-teleporters)).
 - At most five swinging objects, each with 0..7 repeats down (its rope).
-  The original levels have at most two, with 1..7. Nothing checks it: a
-  sixth swinging object breaks the first one's rope, and a rope with more
-  than 7 repeats down hangs still and does not swing.
+  The original levels have at most two, with 1..7. The game does not
+  check it: a sixth swinging object breaks the first one's rope and moves
+  what the game finds in its place, and many stop the game; a rope with
+  more than 7 repeats down hangs still, does not swing and writes past its
+  swing's room, the fifth swing's over the game's other data. The editor
+  refuses more and lists a file with more as damaged.
 - A type the style lacks, or an origin far outside the map, breaks the
   game. The original levels have origins *x* -32..1248 and *y* 8..648.
 
@@ -422,7 +434,7 @@ busy (one walking into an exit, for example) is not affected.
 | Bit 12 alone | 0, exit | The lemming walks into the exit and is saved |
 | | 1, water | A Swimmer swims; any other lemming drowns |
 | | 2, ice (Polar's type 12) | A Skater skates; any other lemming slips, see [ice](#ice) |
-| | 3..63 | Breaks the game; never write it |
+| | 3..63 | Nothing in the editor's install (in the game alone, 3 saves the lemming as an exit and the others jump into code that stopped the game); never write it |
 | Bit 11 alone | Trap | The lemming is lost, one at a time: while the trap's animation runs, the next lemming passes |
 | | Timed hazard | While its animation is in a window of frames, a lemming there is killed: by Classic 4 at once, by Sports 8 as by a long fall |
 | | Launcher | Throws the lemming, with speeds of at most 8 pixels a step: Cavelem 3 up and to the left and Outdoor 3 up and to the right, both on contact; the Sports launchers 9 and 10 up or down in the lemming's direction and 11 and 12 to the left or right, while they are switched on |
@@ -430,7 +442,7 @@ busy (one walking into an exit, for example) is not affected.
 | | Bouncer | A jumping, flying or falling lemming bounces up (a faller becomes a jumper) |
 | | Teleporter | Moves the lemming to the partner, see [switches and teleporters](#switches-and-teleporters) |
 | | Cannon, catapult, grabber | See [devices](#devices) |
-| | Other links | Nothing: they tie a control or other cells to their object |
+| | Other links | A control's link (written by objects only with both bits) or a link that no object gets: nothing in the editor's install (the game alone stops); never write it |
 | Both bits | | Nothing on contact: a clickable control, see below |
 
 ### Ice
@@ -835,9 +847,12 @@ other byte of a title from elsewhere as a space when it edits the title.
   view and the scroll limits break the rule in
   [scrolling](#the-start-view-and-the-scroll-limits), a placement's type is
   neither `-1` nor one the style has, its repeats are over 40, its origin
-  is more than 512 pixels outside the map or off the 16 x 8 cell grid, or
+  is more than 512 pixels outside the map or off the 16 x 8 cell grid,
   the origin plus its type's offset is below 0 on either axis (left of
-  or above the map, in [the objects' chunk](#objects-l2bo-1f4821c7)).
+  or above the map, in [the objects' chunk](#objects-l2bo-1f4821c7)) or
+  its cells with their copies reach past the 1971 cells (below the map),
+  the built objects need more than 4096 bytes, or there are more than
+  five swinging objects or a rope of more than 7 repeats down.
 - A tool that rewrites a level should keep every byte it does not change,
   the unused ones too, and the order of the placements.
 
@@ -862,7 +877,8 @@ accepts it:
 5. Objects: empty placements of five `-1` words; types the style has; one
    to four entrances; at most 64 links and 4096 bytes of built objects;
    origins near the map, *x* a multiple of 16 and *y* of 8, with the
-   origin plus the type's offset 0 or more on both axes; repeats 0..40,
+   origin plus the type's offset 0 or more on both axes and every copy's
+   cells inside the 1971 cells; repeats 0..40,
    and 0..7 down for a swinging object; at most five swinging objects;
    teleporters in pairs; at most 32 switches and 32 switch targets, in
    matching order.

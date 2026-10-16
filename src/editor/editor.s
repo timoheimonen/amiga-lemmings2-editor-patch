@@ -1,4 +1,4 @@
-; Lemmings 2: The Tribes In-Game Level Editor V1.2.1
+; Lemmings 2: The Tribes In-Game Level Editor V1.2.2
 ; Copyright (c) 2026 Timo Heimonen <timo.heimonen@proton.me>
 ; Licensed under the MIT License. See the LICENSE file for details.
 ;
@@ -100,6 +100,11 @@ QUIT_RIGHT      equ $44         ; the QUIT column: x below this
         GAME P_TAB,$00bae,$00ba6                ; cmp.b #9,d0 / beq.w G_VIDEO: Tab in play
         GAME P_RELEASE,$09ad6,$0986e            ; tst.b $1de(a5) / bne.w (rts): a lemming out
         GAME P_OPENING,$001ea,$001e2            ; tst.b $1e6(a5) / beq.w: the entrances opening
+        GAME P_EFFECT,$09dc4,$09b5a             ; andi.l #$0fc00000,d6 / swap d6: a cell's
+                                                ; direct effect, for the jump at R_EFFECTS
+        GAME R_EFFECTS,$09dd2,$09b68            ; its table of three: exit, water, ice
+        GAME P_LINK_TRAP,$09e7e,$09c14          ; trap #15 / cmpi.w: a link's effect
+                                                ; without a contact handler
 
 ; Data, hunk 0
         GAME HEADER,$18d16,$189de               ; the parsed header of the selected level
@@ -200,15 +205,17 @@ LEVELS_PREFIX   equ 7           ; "Levels/"
 
 ; The New page
 NEW_NAME_MAX    equ 20          ; characters of a file name, before ".lvl"
-NEW_LABEL_X     equ 40
-NEW_VALUE_X     equ 112         ; a multiple of 16: G_RESTORE_RECT copies words
+NEW_LABEL_X     equ 24
+NEW_VALUE_X     equ 80          ; a multiple of 16: G_RESTORE_RECT copies words;
+                                ; 20 of the widest letters, the cursor and
+                                ; ".lvl" end at x 308
 NEW_CREDIT_Y    equ $12         ; the editor's name and version, below the title
 NEW_NAME_Y      equ $30
 NEW_STYLE_Y     equ $48
 NEW_SHAPE_Y     equ $5c
 NEW_ROW_H       equ 12
 NEW_MESSAGE_Y   equ $74
-NEW_MIDDLE      equ 176         ; a click left of it: the previous style or size
+NEW_MIDDLE      equ 144         ; a click left of it: the previous style or size
 NEW_STYLE       equ 1           ; Beach, until another is chosen
 NEW_SHAPE       equ 3           ; 42x44 cells, the shipped levels' usual
 NEW_MINUTES     equ 5
@@ -302,6 +309,9 @@ checks: dc.l P_CROSSES,$206d0248        ; movea.l $248(a5),a0
         dc.l P_RELEASE,$4a2d01de,P_RELEASE+4,$66004a7e
         dc.l P_OPENING,$4a2d01e6,P_OPENING+4,$6700003e
         endif
+        dc.l P_EFFECT,$02860fc0,P_EFFECT+4,$00004846 ; andi.l #$0fc00000,d6 /
+                                        ; swap d6
+        dc.l P_LINK_TRAP,$4e4f0c68      ; trap #15 / cmpi.w #$5c,$e(a0)
         dc.l FONT_WIDTHS,$06050808      ; ' ', '!', '"' and '#'
         dc.l G_TEXT,$48e7e0fe           ; movem.l d0-d2/a0-a6,-(sp)
         dc.l G_PICKER,$426d014e,G_PICKER+4,$43ed01a0 ; clr.w $14e(a5) /
@@ -384,6 +394,7 @@ hunk0_offsets:
         HUNK0_ADDR r_release,R_RELEASE
         HUNK0_ADDR r_opening,R_OPENING
         HUNK0_ADDR r_opened,R_OPENED
+        HUNK0_ADDR r_effects,R_EFFECTS
         HUNK0_ADDR font_widths,FONT_WIDTHS
         HUNK0_ADDR r_crosses_done,R_CROSSES_DONE
         HUNK0_ADDR r_title_again,R_TITLE_AGAIN
@@ -441,6 +452,7 @@ hooks:  HOOK P_CROSSES,$4ef9,hook_crosses       ; jmp
         HOOK P_TAB,$4ef9,hook_tab               ; jmp
         HOOK P_RELEASE,$4ef9,hook_release       ; jmp
         HOOK P_OPENING,$4ef9,hook_opening       ; jmp
+        HOOK P_EFFECT,$4ef9,hook_effect         ; jmp
         HOOK P_FRAME,$4ef9,hook_frame           ; jmp
         HOOK P_SPRITE_POS,$4ef9,sprite_words    ; jmp
         dc.l -1
@@ -530,6 +542,9 @@ init:
 
         lea hooks(pc),a0
         bsr patch_hooks
+        movea.l hunk0,a1                ; rts for trap #15: a link whose effect
+        adda.l #P_LINK_TRAP,a1          ; has no contact handler does nothing
+        move.w #$4e75,(a1)
         ifd PAL_RELEASE
         movea.l hunk0,a1                ; jmp hook_quit_column, no NOP: the
         adda.l #P_QUIT,a1               ; next column's test follows at once
@@ -726,6 +741,26 @@ hook_release:
         tst.b G_RELEASE_HOLD(a5)        ; the two original instructions
         bne.s .none
         move.l r_release,-(sp)
+.none:  rts
+
+; Cells that a level file holds without an object to write them. Jumped to
+; from P_EFFECT in ApplyCellInteraction ($9DC4), with D6 a cell under a
+; lemming that has bit 12 and not bit 11: its effect (bits 22..27) picks
+; an entry of the game's table of three (exit, water, ice), which the
+; game jumps into without a bound; 3 and up ran the code after the table
+; (an exit, a link's code or the middle of an instruction), and the game
+; stopped. Such a cell does nothing now, as one without bits 11 and 12.
+; The other half is patched by init: the trap #15 that a link's effect
+; without a contact handler ran (also a link no object takes, which reads
+; as effect 0) becomes an rts. No shipped level reaches either.
+hook_effect:
+        andi.l #$0fc00000,d6            ; the original instructions
+        swap d6
+        lsr.w #4,d6                     ; the effect * 4
+        cmp.w #2*4,d6
+        bhi.s .none
+        move.l r_effects,-(sp)          ; the table's entry, as the
+        add.l d6,(sp)                   ; game's jmp (pc,d6.w)
 .none:  rts
 
 ; The tribe, its selected level and the record in hunk 3 are kept aside
@@ -947,93 +982,168 @@ check_values:
 
 ; A0 the placements (64 of five LE16: type, x, y, copies across and down;
 ; type -1 an empty place, whose other words are anything), D0 the style,
-; D1 the shape -> Z set when every type is one the style has (another one
-; made the game's object expansion crash at once), the copies are 0 to 40
-; (the editor's range; the shipped levels use up to 18), the origin is
-; at most PLACE_SLACK pixels outside the map (the shipped levels' are
-; inside; one far outside crashed the game in play) and on the 16x8 cell
-; grid, as every shipped one and every one the editor places (the game's
-; build, $C6E2, addresses a cell by x / 4 and y / 4 unmasked, so an
-; origin off the grid had its tiles written across cells), and the type's
-; first cells (type_offsets) are not left of or above the map: the same
-; logical shifts put such a cell about 16 KiB away, into the packed level
-; banks (left; the game stopped when it next played that tribe's level) or
-; wherever a word of code points (above). Parts that a level from
-; elsewhere repeats past the map are not checked: the game writes them
-; without clipping, as it would in its own levels. Preserves D0/A0.
+; D1 the shape -> Z set when the game can build them all, as it builds the
+; shipped levels:
+; - every type is one the style has (another one made the game's object
+;   expansion crash at once), and the copies are 0 to 40 (the editor's
+;   range; the shipped levels use up to 18);
+; - the origin is at most PLACE_SLACK pixels outside the map (the shipped
+;   levels' are inside; one far outside crashed the game in play) and on
+;   the 16x8 cell grid, as every shipped one and every one the editor
+;   places (the game's build, $C6E2, addresses a cell by x / 4 and y / 4
+;   unmasked, so an origin off the grid had its tiles written across
+;   cells);
+; - the type's first cells (type_offsets) are not left of or above the
+;   map: the same logical shifts put such a cell about 16 KiB away, into
+;   the packed level banks (left; the game stopped when it next played that
+;   tribe's level) or wherever a word of code points (above);
+; - its last cell, with its copies (type_build), lies inside the map's 1971
+;   cells: the build writes a row below them, up to the 90th, past the map
+;   into the game's data and packed levels, as left of it (the game stopped
+;   when it next played that tribe's level);
+; - the built objects take at most POOL_SIZE bytes (the expansion writes
+;   past the pool over the link table, and the game crashed);
+; - at most SWINGS_MAX swinging objects with ropes of at most ROPE_MAX
+;   copies down: the game keeps five, and more, or a longer rope, wrote
+;   over its other data (50 swings crashed it).
+; Preserves D0/A0.
 check_placements:
-        movem.l d0-d7/a0-a2,-(sp)
+        movem.l d0-d7/a0-a4,-(sp)
         lea style_types(pc),a1
         moveq #0,d7
         move.b 0(a1,d0.w),d7            ; the style's types
-        lea type_offsets(pc),a2
-        moveq #0,d2
-.style: subq.w #1,d0                    ; past the styles before it
+        moveq #0,d2                     ; the types of the styles before it
+.style: subq.w #1,d0
         bmi.s .found
-        move.b (a1)+,d2
-        adda.w d2,a2
-        adda.w d2,a2
+        moveq #0,d3
+        move.b (a1)+,d3
+        add.w d3,d2
         bra.s .style
-.found: movea.l hunk0,a1
+.found: lea type_offsets(pc),a2         ; two bytes a type
+        adda.w d2,a2
+        adda.w d2,a2
+        lea type_build(pc),a3           ; four bytes a type
+        lsl.w #2,d2
+        adda.w d2,a3
+        movea.l hunk0,a1
         adda.l #G_SHAPES,a1
         lsl.w #2,d1
-        move.w 0(a1,d1.w),d5
-        lsl.w #CELL_SHIFT_X,d5
-        add.w #PLACE_SLACK,d5           ; the largest x
-        move.w 2(a1,d1.w),d6
-        lsl.w #CELL_SHIFT_Y,d6
-        add.w #PLACE_SLACK,d6           ; and y
+        move.w 0(a1,d1.w),d5            ; columns
+        move.w 2(a1,d1.w),d6            ; rows
+        moveq #POOL_END,d2
+        moveq #0,d1
+        movem.l d1-d2,-(sp)             ; 0(sp) swinging objects, 4(sp) bytes
+        lea check_place,a4
         moveq #64-1,d4
-.place: bsr.s .le
-        cmp.w #-1,d0
-        beq.s .next
-        cmp.w d7,d0
-        bhs.s .bad
-        move.w d0,d3
-        add.w d3,d3                     ; its two offsets
-        bsr.s .le                       ; x
+.place: movea.l a4,a1                   ; the placement's five words, big-endian
+        moveq #5-1,d0
+.word:  move.b 1(a0),(a1)+
+        move.b (a0)+,(a1)+
+        addq.l #1,a0
+        dbra d0,.word
+        move.w (a4),d3                  ; its type
+        cmp.w #-1,d3
+        beq .next
+        cmp.w d7,d3
+        bhs .bad
+        move.w d3,d2
+        add.w d2,d2                     ; its two offsets
+        move.w 2(a4),d0                 ; x
         cmp.w #-PLACE_SLACK,d0
-        blt.s .bad
-        cmp.w d5,d0
-        bgt.s .bad
+        blt .bad
+        move.w d5,d1
+        lsl.w #CELL_SHIFT_X,d1
+        add.w #PLACE_SLACK,d1
+        cmp.w d1,d0
+        bgt .bad
         moveq #(1<<CELL_SHIFT_X)-1,d1   ; on a cell column
         and.w d0,d1
-        bne.s .bad
-        move.b 0(a2,d3.w),d1
+        bne .bad
+        move.b 0(a2,d2.w),d1
         ext.w d1
         add.w d0,d1                     ; its first cells not left of the map
-        bmi.s .bad
-        bsr.s .le                       ; y
+        bmi .bad
+        move.w 4(a4),d0                 ; y
         cmp.w #-PLACE_SLACK,d0
-        blt.s .bad
-        cmp.w d6,d0
-        bgt.s .bad
+        blt .bad
+        move.w d6,d1
+        lsl.w #CELL_SHIFT_Y,d1
+        add.w #PLACE_SLACK,d1
+        cmp.w d1,d0
+        bgt .bad
         moveq #(1<<CELL_SHIFT_Y)-1,d1   ; and row
         and.w d0,d1
-        bne.s .bad
-        move.b 1(a2,d3.w),d1
+        bne .bad
+        move.b 1(a2,d2.w),d1
         ext.w d1
         add.w d0,d1                     ; nor above it
-        bmi.s .bad
-        bsr.s .le                       ; copies across
-        cmp.w #MAX_REPEAT,d0
+        bmi .bad
+        cmp.w #MAX_REPEAT,6(a4)         ; copies across
+        bhi .bad
+        cmp.w #MAX_REPEAT,8(a4)         ; and down
+        bhi .bad
+        move.w d3,d2
+        lsl.w #2,d2
+        lea 0(a3,d2.w),a1               ; what it builds
+        asr.w #CELL_SHIFT_Y,d0          ; its last row: the origin's,
+        moveq #15,d1
+        and.b 2(a1),d1
+        add.w d1,d0                     ; the type's bottom row
+        moveq #0,d1
+        move.b 2(a1),d1
+        lsr.w #4,d1
+        mulu 8(a4),d1
+        add.w d1,d0                     ; and the copies down
+        muls d5,d0
+        move.w 2(a4),d1                 ; its last column: the origin's,
+        asr.w #CELL_SHIFT_X,d1
+        ext.l d1
+        add.l d1,d0
+        moveq #15,d1
+        and.b 3(a1),d1
+        add.l d1,d0                     ; the type's rightmost
+        moveq #0,d1
+        move.b 3(a1),d1
+        lsr.w #4,d1
+        mulu 6(a4),d1
+        add.l d1,d0                     ; and the copies across
+        cmp.l #MAP_CELLS-1,d0           ; its last cell inside the 1971
+        bgt .bad
+        moveq #0,d0
+        move.b (a1),d0                  ; the parts at no repeats
+        move.b 1(a1),d2
+        btst #0,d2
+        beq.s .no_across
+        add.w 6(a4),d0                  ; a part repeated across
+.no_across:
+        btst #1,d2
+        beq.s .no_down
+        add.w 8(a4),d0                  ; down
+.no_down:
+        btst #2,d2
+        beq.s .no_both
+        move.w 6(a4),d1                 ; or both ways
+        mulu 8(a4),d1
+        add.w d1,d0
+.no_both:
+        lsl.l #3,d0                     ; COMPONENT_SIZE bytes each
+        add.l #INSTANCE_SIZE,d0
+        add.l d0,4(sp)
+        tst.b d2
+        bpl.s .next
+        addq.l #1,(sp)                  ; a swinging object
+        cmp.w #ROPE_MAX,8(a4)           ; and its rope
         bhi.s .bad
-        bsr.s .le                       ; and down
-        cmp.w #MAX_REPEAT,d0
+.next:  dbra d4,.place
+        cmp.l #POOL_SIZE,4(sp)
         bhi.s .bad
-        subq.l #8,a0
-.next:  lea 10-2(a0),a0
-        dbra d4,.place
+        cmp.l #SWINGS_MAX,(sp)
+        bhi.s .bad
         cmp.b d0,d0                     ; Z set
         bra.s .out
 .bad:   moveq #1,d0                     ; Z clear
-.out:   movem.l (sp)+,d0-d7/a0-a2       ; the flags stay
-        rts
-.le:    moveq #0,d0                     ; the next LE16 at A0
-        move.b 1(a0),d0
-        lsl.w #8,d0
-        move.b (a0),d0
-        addq.l #2,a0
+.out:   addq.l #8,sp                    ; the flags stay
+        movem.l (sp)+,d0-d7/a0-a4
         rts
 
 ; The object types of each style (the L2OB count of its astyle.dat, which
@@ -1089,6 +1199,82 @@ type_offsets:
         dc.b 0,0,0,0,0,0,32,0,16,0,16,0,16,0,32,0
         dc.b 0,0,16,0,16,0,0,8,0,8,0,0,16,8,16,0
         dc.b 0,0,0,0
+        even
+
+; What each type builds, four bytes a type in the order of style_types:
+; +0 the parts it builds at no repeats; +1 bit 0: a part repeats across,
+; bit 1: one repeats down, bit 2: one repeats both ways (each adds that
+; many parts), bit 7: a swinging object (its copies down are its rope);
+; +2 the bottom row of the cells it writes, counted from the origin's
+; row, at no repeats (low nibble), and the rows each copy down adds
+; (high); +3 its rightmost cell column the same way, for the copies
+; across. Worked out from the object definitions of the style files; the
+; counts and the extents grow so for all 185 types.
+type_build:
+        ; classic
+        dc.b $01,$00,$02,$02,$02,$00,$03,$02,$02,$00,$05,$01,$02,$00,$05,$00
+        dc.b $05,$00,$03,$04,$01,$01,$00,$11,$01,$07,$10,$11,$01,$07,$43,$23
+        dc.b $01,$07,$43,$11,$01,$07,$21,$11,$01,$07,$10,$11,$01,$07,$10,$11
+        dc.b $01,$07,$10,$11,$02,$00,$03,$02
+        ; beach
+        dc.b $01,$00,$02,$02,$03,$00,$05,$01,$02,$00,$03,$01,$03,$00,$07,$01
+        dc.b $01,$00,$01,$01,$06,$82,$04,$01,$01,$01,$01,$11,$01,$07,$10,$11
+        dc.b $01,$07,$43,$23,$01,$07,$21,$23,$01,$07,$43,$11,$01,$07,$21,$11
+        dc.b $01,$07,$10,$11,$03,$00,$05,$01
+        ; cavelem
+        dc.b $01,$00,$01,$02,$05,$00,$03,$02,$02,$00,$03,$01,$02,$00,$03,$02
+        dc.b $06,$82,$04,$01,$01,$01,$00,$11,$01,$07,$10,$11,$01,$07,$43,$23
+        dc.b $01,$07,$21,$11,$01,$00,$01,$00,$01,$00,$01,$00,$05,$00,$04,$02
+        dc.b $02,$00,$01,$00
+        ; circus
+        dc.b $01,$00,$02,$02,$04,$00,$03,$01,$05,$01,$00,$13,$02,$00,$01,$00
+        dc.b $01,$00,$00,$00,$01,$00,$00,$00,$01,$00,$00,$00,$01,$00,$00,$00
+        dc.b $03,$02,$14,$01,$03,$02,$14,$01,$06,$82,$04,$01,$01,$07,$43,$23
+        dc.b $01,$07,$21,$23,$01,$07,$10,$11,$01,$07,$21,$11,$01,$07,$43,$11
+        dc.b $04,$00,$03,$01
+        ; egyptian
+        dc.b $01,$00,$02,$02,$04,$00,$03,$01,$02,$00,$03,$01,$02,$00,$01,$00
+        dc.b $01,$00,$00,$00,$01,$00,$02,$00,$01,$00,$00,$00,$01,$00,$00,$00
+        dc.b $06,$82,$04,$01,$01,$01,$00,$11,$01,$07,$10,$11,$01,$07,$43,$23
+        dc.b $01,$07,$21,$23,$01,$07,$43,$11,$01,$07,$21,$11,$01,$07,$10,$11
+        dc.b $04,$00,$03,$01,$02,$00,$01,$00
+        ; highland
+        dc.b $01,$00,$04,$01,$02,$00,$05,$01,$05,$01,$00,$13,$06,$82,$04,$01
+        dc.b $02,$00,$04,$01,$01,$00,$02,$00,$01,$01,$00,$11,$01,$07,$10,$11
+        dc.b $01,$07,$21,$23,$01,$07,$43,$23,$01,$07,$21,$11,$01,$07,$10,$11
+        dc.b $03,$00,$05,$01,$02,$00,$01,$00
+        ; medieval
+        dc.b $01,$00,$03,$02,$04,$00,$05,$02,$06,$82,$04,$01,$06,$01,$00,$13
+        dc.b $04,$00,$03,$02,$01,$00,$02,$00,$01,$01,$00,$11,$01,$07,$10,$11
+        dc.b $01,$07,$43,$23,$01,$07,$21,$11,$04,$00,$06,$02,$02,$00,$01,$00
+        ; outdoor
+        dc.b $01,$00,$02,$02,$02,$00,$04,$01,$06,$82,$04,$01,$02,$00,$02,$01
+        dc.b $02,$00,$03,$01,$01,$00,$00,$00,$01,$00,$01,$03,$01,$01,$00,$11
+        dc.b $01,$07,$10,$11,$01,$01,$00,$11,$01,$07,$10,$11,$01,$07,$21,$11
+        dc.b $01,$07,$10,$11,$01,$00,$00,$00,$02,$00,$04,$01
+        ; polar
+        dc.b $01,$00,$02,$02,$02,$00,$04,$01,$06,$82,$04,$01,$05,$01,$00,$13
+        dc.b $01,$07,$43,$23,$01,$07,$21,$11,$01,$07,$10,$11,$02,$00,$04,$02
+        dc.b $01,$01,$01,$11,$01,$07,$10,$11,$01,$00,$00,$00,$01,$00,$00,$00
+        dc.b $01,$01,$01,$11,$02,$00,$04,$01
+        ; shadow
+        dc.b $01,$00,$02,$02,$02,$00,$05,$01,$06,$82,$04,$01,$05,$01,$00,$13
+        dc.b $01,$07,$43,$23,$01,$07,$43,$11,$01,$07,$21,$11,$01,$07,$10,$11
+        dc.b $01,$07,$10,$11,$02,$00,$04,$00,$01,$00,$02,$00,$01,$00,$02,$00
+        dc.b $01,$00,$02,$00,$01,$00,$02,$00,$01,$01,$01,$11,$01,$07,$10,$11
+        dc.b $01,$00,$01,$00,$01,$00,$01,$00,$01,$00,$01,$00,$03,$00,$05,$01
+        dc.b $02,$00,$01,$00,$01,$00,$00,$00,$02,$00,$01,$00
+        ; space
+        dc.b $01,$00,$01,$02,$03,$00,$04,$01,$06,$82,$04,$01,$01,$00,$01,$00
+        dc.b $01,$07,$43,$23,$01,$07,$21,$11,$03,$00,$04,$01,$02,$00,$08,$03
+        dc.b $02,$00,$02,$00,$01,$00,$01,$00,$01,$00,$02,$04,$03,$00,$05,$01
+        dc.b $01,$00,$00,$00
+        ; sports
+        dc.b $01,$00,$02,$02,$02,$00,$03,$00,$06,$82,$04,$01,$01,$07,$43,$23
+        dc.b $01,$07,$43,$11,$01,$07,$21,$11,$01,$07,$10,$11,$01,$07,$21,$23
+        dc.b $02,$00,$04,$00,$07,$00,$05,$01,$07,$00,$05,$01,$07,$00,$02,$02
+        dc.b $07,$00,$02,$02,$02,$00,$01,$00,$01,$01,$01,$11,$01,$07,$10,$11
+        dc.b $02,$00,$01,$00,$02,$00,$03,$00
         even
 
 ; The record's chunk tags and sizes, as the game's parser walks them
@@ -2599,6 +2785,7 @@ anim_tick:      ds.w 1                  ; +136 passes the preview or the object
 
 names_left:     ds.w 1
 next_name:      ds.l 1
+check_place:    ds.w 5                  ; check_placements: a placement, big-endian
 path:           ds.b 64
 label_pixels:   ds.b (14+14+6+14)*LETTER_ROWS
                 cnop 0,4
