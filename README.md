@@ -139,6 +139,7 @@ the files to share your levels.
 ```sh
 python3 build.py
 ```
+Requires: [vasm](http://sun.hasenbraten.de/vasm/) `vasmm68k_mot`.
 
 Assembles the slave (`src/whdload/slave.s`) and the editor
 (`src/editor/editor.s`, which includes the other editor sources) for each
