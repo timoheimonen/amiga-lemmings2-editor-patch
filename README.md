@@ -39,8 +39,6 @@ More: [a new level](docs/screenshots/Lemmings%202%20in-game%20editor%20-%20new%2
 - A **PAL** display: the editor's bar lies below the game's view, on lines
   only PAL shows.
 - Python 3.8 or later (for `patch.py`).
-- [vasm](http://sun.hasenbraten.de/vasm/) `vasmm68k_mot` (only for
-  `build.py`).
 - Your own copies of the game's three disks, all three of one release, as
   IPF or as ADF images with these SHA-256 hashes:
 
