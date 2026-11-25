@@ -1,4 +1,4 @@
-; Lemmings 2: The Tribes In-Game Level Editor V1.2.2
+; Lemmings 2: The Tribes In-Game Level Editor V1.2.3
 ; Copyright (c) 2026 Timo Heimonen <timo.heimonen@proton.me>
 ; Licensed under the MIT License. See the LICENSE file for details.
 ;
@@ -351,8 +351,9 @@ test_result:
         cmp.w #RESULT_EDIT,d0
         beq.s .edit
         tst.b dirty
-        beq list_flow
-        st ask_on_entry
+        bne.s .ask
+        jmp list_flow
+.ask:   st ask_on_entry
 .edit:  st editing
         bra edit_rebuild
 

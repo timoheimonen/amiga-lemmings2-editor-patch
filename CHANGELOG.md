@@ -1,5 +1,31 @@
 # Changelog
 
+## V1.2.3 (2026-11-25)
+
+- **In-view skills page**: Skills (`P`) in Param mode now opens a 10x5 grid
+  of all 50 style-valid skills directly inside the edit view while keeping
+  the level's skill panel live below, instead of leaving to the game's
+  Practice picker. Click a panel slot (or use `<` / `>`, `,` / `.`) and
+  click a skill in the grid to replace a single skill, add into an empty
+  slot (count 10, advancing to the next empty slot), or swap two equipped
+  skills with their counts. Right-click a panel slot or an equipped grid
+  skill (or press `Del` / Remove) to remove it, `C` (Clear) to clear all
+  slots, `Return` (OK) to keep the changes as one undo step, or `Esc`
+  (Cancel) to restore the previous skills.
+- **Immediate modal help**: opening a modal page in the editor bar (leave
+  question, test-play question, Title, Limits, Pieces, Types, Skills) clears
+  any prior status message so the page's own shortcut help shows at once.
+- **Mouse-edge scrolling on Types**: the object page (`P` in Objects mode)
+  now scrolls when the pointer touches the top or bottom edge of the screen,
+  matching the terrain Pieces page.
+- **Quick clear and list double-click**: `Ctrl+U` and `Shift+Backspace` (or
+  `Shift+Del`) clear the whole text field on the New, Rename and Title
+  pages. Double-clicking a valid level in the Custom Levels list opens it
+  directly in the editor.
+- **Menu hover highlight and New-page note**: enabled red buttons on the
+  menu pages light up under the pointer, and the New page notes below Size
+  that style and size cannot be changed later.
+
 ## V1.2.2 (2026-10-16)
 
 - More level files made elsewhere are listed as damaged, where the game

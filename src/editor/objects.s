@@ -1,4 +1,4 @@
-; Lemmings 2: The Tribes In-Game Level Editor V1.2.2
+; Lemmings 2: The Tribes In-Game Level Editor V1.2.3
 ; Copyright (c) 2026 Timo Heimonen <timo.heimonen@proton.me>
 ; Licensed under the MIT License. See the LICENSE file for details.
 ;
@@ -2053,6 +2053,7 @@ open_types:
         beq .none
         sf dragging
         clr.w anim_tick                 ; every type from its first frame
+        clr.w types_edge_delay
         moveq #PAGE_TYPES,d0
         lea types_widgets(pc),a0
         bra page_open
@@ -2081,6 +2082,33 @@ types_down:
         st fields_changed
 .same:  rts
 
+TYPES_SCROLL_DELAY equ 3                ; passes between edge-scroll rows (~0.24 s)
+
+; The pointer at the top of the screen or the bottom of its range scrolls the
+; object page, throttled so rows do not fly past at 12.5 rows/second.
+types_scroll:
+        move.w G_CURSOR_Y(a5),d1
+        tst.w d1
+        beq.s .up
+        cmp.w #CURSOR_BOTTOM,d1
+        beq.s .down
+        clr.w types_edge_delay
+        rts
+.up:    bsr.s .step
+        bne.s .wait
+        bra types_up
+.down:  bsr.s .step
+        bne.s .wait
+        bra types_down
+.step:  tst.w types_edge_delay
+        beq.s .go
+        subq.w #1,types_edge_delay
+        moveq #1,d0                     ; Z clear: wait
+        rts
+.go:    move.w #TYPES_SCROLL_DELAY,types_edge_delay
+        moveq #0,d0                     ; Z set: step now
+.wait:  rts
+
 ; A pass of the object page.
 types_pass:
         bsr scroll_flags_clear          ; the display does not scroll
@@ -2088,6 +2116,7 @@ types_pass:
         GCALL buttons
         bsr read_key
         bsr update_pointer
+        bsr types_scroll
         bsr types_draw
         addq.w #1,anim_tick             ; the next frames in the next pass
         bsr types_input
@@ -2391,6 +2420,7 @@ page_row_y:     ds.w PAGE_ROWS_MAX
 page_row_h:     ds.w PAGE_ROWS_MAX      ; must follow page_row_y
 page_rows:      ds.w 1
 page_max_top:   ds.w 1
+types_edge_delay: ds.w 1
 slot_box:       ds.w 4*SLOTS            ; x0, y0, x1, y1 of each object
 slot_role:      ds.b SLOTS
 slot_kind:      ds.b SLOTS

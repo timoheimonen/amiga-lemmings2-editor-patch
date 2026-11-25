@@ -30,8 +30,8 @@ its screens and its tools at a small set of hooks.
   record as the level being edited and makes everything the game shows
   again from it. There is no second format and no conversion.
 - **The game's code does the work.** Building the map and the objects,
-  drawing the terrain, the objects' graphics, the skill panel, the clock,
-  the menu screen and its text, the skill picker and the whole of play
+  drawing the terrain, the objects' graphics, the skill panel, the skill
+  icons, the clock, the menu screen and its text, and the whole of play
   are the game's routines, which the editor calls with the game's own
   registers and globals.
 - **Few patch points, each one checked.** The slave changes 6 places in
@@ -241,11 +241,8 @@ Patched only while they are needed:
 | --- | --- | --- | --- | --- |
 | Play copper list: the display window | hunk 1 `$00100` | the same | the edit view is shown | The window ends at line `$124` instead of `$F4`, below the skill panel |
 | Play copper list: its end | hunk 1 `$001C4` | the same | the edit view is shown | `COPJMP2` to the bar's copper list in the editor's chip memory; the editor sets `COP2LC` every field |
+| Play copper list: the play colours and background | hunk 1 `$00034`, `$00144` | the same | the skills page is shown | Loaded from `PAL_PRACTICE` (`hunk 1 + $00A44`) in `edit_irq` right after the buffer swap so the 50 skill icons render with their own 16-colour palette on a black background, and restored from `PAL_PLAY` on exit |
 | The frame callback | A5 + `$222` | A5 + `$220` | the edit view is shown | The editor's interrupt routine in place of the play callback |
-| The skill picker's frame wait | `$1619C` | `$15ED0` | the picker runs | Esc or the right button leave it, keeping the old skills |
-| The picker's end | `$161B6` | `$15EEA` | the picker runs | Returns after the eighth choice instead of going on to Practice |
-| The picker's prompt | `$16478` | `$161AC` | the picker runs | The editor's prompt |
-| The picker's icon, choice and name | `$16444`, `$16358`, `$163FA` | `$16178`, `$1608C`, `$1612E` | the picker runs | In a Classic-style level the Blocker in the Attractor's place, as only Classic levels can use the Blocker and only the others the Attractor |
 
 The slave's patches, for the start from hard disk:
 
@@ -278,7 +275,6 @@ stateDiagram-v2
     state "Result page" as Result
     state "Edit view" as Edit
     state "Test play" as Test
-    state "The game's skill picker" as Picker
 
     [*] --> Title
     Title --> List: EDIT
@@ -295,8 +291,6 @@ stateDiagram-v2
     Edit --> Test: Test
     Test --> Result: level over
     Test --> Edit: Esc
-    Edit --> Picker: Skills in the Param mode
-    Picker --> Edit: built again
     Result --> Play: Replay
     Result --> Test: Replay after a test
     Result --> Edit: Edit
@@ -409,10 +403,13 @@ flowchart TB
 - **Parameters**: a field is changed in the record, in the game's parsed
   header and in the play counts and clock together, and the game's panel
   routines draw the panel again.
-- **The skill picker** is the game's own Practice picker, with the
-  temporary patches above. It draws over the play display, so afterwards
-  the edit view is built again through the same path that opened it, with
-  the editor's mode, view, selections and unsaved changes kept.
+- **The skills page** (`PAGE_SKILLS` in `level.s`) draws the 50 style-valid
+  skill icons in a 10x5 grid straight into the play back buffer with
+  `G_SPRITE` (from the panel sprite table `A5+$23A` / `$238`), switching
+  `COP_PLAY_COLOURS` and `COP_PLAY_BG` to `PAL_PRACTICE` in `edit_irq` on
+  buffer swap. The level's skill panel stays live below so individual slots
+  can be replaced, added, swapped or removed without leaving or rebuilding
+  the edit view.
 - **Undo and redo** keep each step as the XOR of the record before and
   after it, in runs of long words, and make the view again from the
   record after every step.

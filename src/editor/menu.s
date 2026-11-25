@@ -1,4 +1,4 @@
-; Lemmings 2: The Tribes In-Game Level Editor V1.2.2
+; Lemmings 2: The Tribes In-Game Level Editor V1.2.3
 ; Copyright (c) 2026 Timo Heimonen <timo.heimonen@proton.me>
 ; Licensed under the MIT License. See the LICENSE file for details.
 ;
@@ -43,6 +43,9 @@ MB_LABEL_Y      equ 4           ; the label below the top (even: the text
 MB_FACE         equ 30
 MB_LIGHT        equ 31
 MB_DARK         equ 29
+MB_HOVER_FACE   equ 4           ; brighter red ($d11 vs $b11)
+MB_HOVER_LIGHT  equ 5           ; warm highlight bevel ($f61)
+MB_HOVER_DARK   equ 30          ; lifted shadow ($b11)
 MB_DIM_FACE     equ 28
 MB_DIM_LIGHT    equ 29
 MB_DIM_DARK     equ 15
@@ -119,7 +122,8 @@ menu_set_off:
         bra.s .button
 .done:  rts
 
-; A2 a button, D6 its number: its face and edges, dimmed when it is off.
+; A2 a button, D6 its number: its face and edges, dimmed when off or lit when
+; hovered.
 button_face:
         movem.l d0-d7/a0-a2,-(sp)
         moveq #MB_FACE,d4
@@ -127,10 +131,17 @@ button_face:
         moveq #MB_DARK,d7
         move.w menu_off,d0
         btst d6,d0
-        beq.s .colours
+        beq.s .enabled
         moveq #MB_DIM_FACE,d4
         moveq #MB_DIM_LIGHT,d5
         moveq #MB_DIM_DARK,d7
+        bra.s .colours
+.enabled:
+        cmp.w menu_hover,d6
+        bne.s .colours
+        moveq #MB_HOVER_FACE,d4
+        moveq #MB_HOVER_LIGHT,d5
+        moveq #MB_HOVER_DARK,d7
 .colours:
         movem.w (a2),d0-d2              ; x, y, width
         move.w d2,d6
@@ -179,6 +190,23 @@ button_label:
         movea.l MB_LABEL(a2),a0
         bra txt_str
 
+; D6 a button index (or -1): redraw it when it is an enabled button.
+menu_redraw_button:
+        tst.w d6
+        bmi.s .done
+        move.w menu_off,d0
+        btst d6,d0
+        bne.s .done
+        movea.l menu_table,a2
+        move.w d6,d0
+        lsl.w #MB_SHIFT,d0
+        adda.w d0,a2
+        bsr button_face
+        bsr txt_start
+        bsr button_label
+        bra txt_draw
+.done:  rts
+
 ; One field of a page. D0 = the button clicked or whose key was pressed;
 ; MENU_OFF with D1 that button when it is dimmed; MENU_CLICK with D1 x and
 ; D2 y for a click elsewhere; MENU_KEY with D1 a key no button has, as
@@ -190,7 +218,14 @@ menu_input:
         move.w G_CURSOR_X(a5),d0
         move.w G_CURSOR_Y(a5),d1
         bsr menu_button_at
+        cmp.w menu_hover,d0
+        beq.s .hover_same
+        move.w menu_hover,d6
         move.w d0,menu_hover
+        bsr menu_redraw_button          ; restore previous hovered button
+        move.w menu_hover,d6
+        bsr menu_redraw_button          ; highlight newly hovered button
+.hover_same:
         bsr menu_help_line
         move.w key,d1
         beq.s .mouse

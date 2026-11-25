@@ -1,4 +1,4 @@
-; Lemmings 2: The Tribes In-Game Level Editor V1.2.2
+; Lemmings 2: The Tribes In-Game Level Editor V1.2.3
 ; Copyright (c) 2026 Timo Heimonen <timo.heimonen@proton.me>
 ; Licensed under the MIT License. See the LICENSE file for details.
 ;
@@ -117,6 +117,7 @@ D_BITMAP        equ 16          ; its bitmap pointer
 ; Hunk 1
 PAL_BLACK       equ $00904      ; 32 black colours
 PAL_MENU        equ $00a04      ; the menu screen's palette (result screen)
+PAL_PRACTICE    equ $00a44      ; 16 colours of the skill icons (straight 0..15)
 COP_TITLE       equ $00220      ; colour moves of the title display
 COP_MENU        equ $004a4      ; colour moves of the menu display
 PTR_NORMAL      equ $04c2c      ; pointer sprites
@@ -214,7 +215,9 @@ NEW_NAME_Y      equ $30
 NEW_STYLE_Y     equ $48
 NEW_SHAPE_Y     equ $5c
 NEW_ROW_H       equ 12
-NEW_MESSAGE_Y   equ $74
+NEW_NOTE_Y      equ $70         ; reminder that style and size lock on create
+NEW_MESSAGE_Y   equ $84
+DOUBLE_CLICK_FRAMES equ 22      ; fields (~0.44 s) for list row double-click
 NEW_MIDDLE      equ 144         ; a click left of it: the previous style or size
 NEW_STYLE       equ 1           ; Beach, until another is chosen
 NEW_SHAPE       equ 3           ; 42x44 cells, the shipped levels' usual
@@ -314,18 +317,11 @@ checks: dc.l P_CROSSES,$206d0248        ; movea.l $248(a5),a0
         dc.l P_LINK_TRAP,$4e4f0c68      ; trap #15 / cmpi.w #$5c,$e(a0)
         dc.l FONT_WIDTHS,$06050808      ; ' ', '!', '"' and '#'
         dc.l G_TEXT,$48e7e0fe           ; movem.l d0-d2/a0-a6,-(sp)
-        dc.l G_PICKER,$426d014e,G_PICKER+4,$43ed01a0 ; clr.w $14e(a5) /
-                                        ; lea $1a0(a5),a1
-        dc.l P_PICKER_ICON,PICKER_ICON_BSR      ; bsr.w G_SPRITE
-        dc.l P_PICKER_ICON+4,$06400020  ; addi.w #32,d0
-        dc.l P_PICKER_PICK,$52402f00    ; addq.w #1,d0 / move.l d0,-(sp)
-        dc.l P_PICKER_PICK+4,$43ed01a0  ; lea $1a0(a5),a1
-        dc.l P_PICKER_NAME-2,$d0415240  ; add.w d1,d0 / addq.w #1,d0
+        dc.l SKILL_NAMES+14,$4a756d70   ; "Jump" (skill 1, Jumper)
         dc.l G_PANEL,$6100028c          ; bsr.w $fad8
         dc.l G_PANEL_SLOT,$2f003200     ; move.l d0,-(sp) / move.w d0,d1
         dc.l G_PANEL_COUNT,$48e700f0    ; movem.l a0-a3,-(sp)
         dc.l G_CLOCK,$4a2d01db          ; tst.b $1db(a5)
-        dc.l G_FRAME_END,$422d01c4      ; clr.b $1c4(a5)
         ifnd PAL_RELEASE
         dc.l P_FRAME,$6100125a,P_FRAME+4,$61002248
         else
@@ -334,27 +330,10 @@ checks: dc.l P_CROSSES,$206d0248        ; movea.l $248(a5),a0
         dc.l P_SPRITE_POS,$70000642,P_SPRITE_POS+4,$002ce14a
         dc.l -1
 
-; Instructions with an absolute address, which the game's relocation set:
-; hunk 0 offset, the opcode word and the hunk 0 offset it addresses. Patched
-; only while the editor calls the Practice picker (level.s).
-relocated_checks:
-        dc.l P_PICKER_FRAME
-        dc.w $4eb9                      ; jsr WaitFrame.l
-        dc.l G_WAIT_FRAME
-        dc.l P_PICKER_DONE
-        dc.w $2079                      ; movea.l (descriptor 7).l,a0
-        dc.l DESCRIPTOR_7
-        dc.l P_PICKER_PROMPT
-        dc.w $41f9                      ; lea (its prompt).l,a0
-        dc.l PICKER_PROMPT
-        dc.l P_PICKER_NAME+2
-        dc.w $41f9                      ; lea (the skill names).l,a0
-        dc.l SKILL_NAMES
-        dc.l -1
-
 ; Hunk 1: the play display's copper list.
 copper_checks:
         dc.l COP_DIWSTOP,$0090f4c2      ; move DIWSTOP,$f4c2
+        dc.l COP_PLAY_BG,$01800000      ; move COLOR00,0 (play background)
         dc.l COP_PLAY_END,$fffffffe
         dc.l -1
 
@@ -423,16 +402,16 @@ hunk0_offsets:
         HUNK0_ADDR g_expand_objects,G_EXPAND_OBJECTS
         HUNK0_ADDR g_border_clear,G_BORDER_CLEAR
         HUNK0_ADDR placements,PLACEMENTS
-        HUNK0_ADDR g_picker,G_PICKER
+        HUNK0_ADDR skill_names,SKILL_NAMES
         HUNK0_ADDR g_panel,G_PANEL
         HUNK0_ADDR g_panel_slot,G_PANEL_SLOT
         HUNK0_ADDR g_panel_count,G_PANEL_COUNT
         HUNK0_ADDR g_clock,G_CLOCK
-        HUNK0_ADDR g_frame_end,G_FRAME_END
 HUNK0_COUNT     equ (*-hunk0_offsets)/4
 hunk1_offsets:
         HUNK1_ADDR pal_black,PAL_BLACK
         HUNK1_ADDR pal_menu,PAL_MENU
+        HUNK1_ADDR pal_practice,PAL_PRACTICE
         HUNK1_ADDR cop_title,COP_TITLE
         HUNK1_ADDR cop_menu,COP_MENU
         HUNK1_ADDR ptr_normal,PTR_NORMAL
@@ -489,19 +468,6 @@ init:
         bra.s .copper
 .copper_checked:
         movea.l hunk0,a3
-        lea relocated_checks(pc),a0
-.relocated:
-        move.l (a0)+,d0
-        bmi.s .relocated_checked
-        move.w (a0)+,d1
-        cmp.w 0(a3,d0.l),d1
-        bne .wrong
-        move.l (a0)+,d1
-        add.l a3,d1
-        cmp.l 2(a3,d0.l),d1
-        bne .wrong
-        bra.s .relocated
-.relocated_checked:
         ; The title screen's descriptor must point at its bitmap.
         move.l hunk2,d0
         add.l #TITLE_BITMAP,d0
@@ -1333,6 +1299,7 @@ grade:  move.w G_SAVED(a5),d1
 ; D0 = LIST_PLAY or LIST_EDIT: the selected entry; 0: back. New, Rename
 ; and Delete are pages of their own, from which the list comes back.
 list_page:
+        clr.w list_click_timer
         bsr pointer_busy
         bsr scan_levels
         bsr menu_open
@@ -1340,7 +1307,10 @@ list_page:
         bsr menu_fade_in
         bsr pointer_normal
 .wait:  move.b #SCREEN_LIST,screen
-        bsr list_off
+        tst.w list_click_timer
+        beq.s .off
+        subq.w #1,list_click_timer
+.off:   bsr list_off
         bsr menu_set_off
         bsr menu_input
         tst.w d0
@@ -1351,6 +1321,7 @@ list_page:
         beq .key
         cmp.w #MENU_OFF,d0
         bne.s .wait
+        clr.w list_click_timer
         lea s_no_level(pc),a0           ; a dimmed button
         tst.w entry_count
         beq.s .say
@@ -1360,9 +1331,9 @@ list_page:
 .click: move.w d1,d0
         move.w d2,d1
         cmp.w #ROW_Y,d1
-        blo.s .wait
+        blo .miss
         cmp.w #PAGE_Y,d1
-        bhs.s .below
+        bhs .below
         sub.w #ROW_Y,d1                 ; a row
         ext.l d1
         divu #ROW_H,d1
@@ -1370,11 +1341,34 @@ list_page:
         mulu #ROWS,d2
         add.w d1,d2
         cmp.w entry_count,d2
-        bhs.s .wait
+        bhs.s .miss
+        tst.w list_click_timer
+        beq.s .select
+        cmp.w list_click_entry,d2
+        bne.s .select
+        clr.w list_click_timer
+        move.w d2,d0
+        bsr entry_at
+        tst.b E_OK(a2)
+        beq.s .bad_dbl
+        bsr click_sound
+        clr.b screen
+        moveq #LIST_EDIT,d0
+        rts
+.bad_dbl:
+        lea s_damaged_only(pc),a0
+        bsr menu_say
+        bra .wait
+.select:
         move.w d2,selected
+        move.w d2,list_click_entry
+        move.w #DOUBLE_CLICK_FRAMES,list_click_timer
         bsr list_draw_rows
-        bra.s .wait
-.below: cmp.w #PAGE_Y+ROW_H,d1
+        bra .wait
+.miss:  clr.w list_click_timer
+        bra .wait
+.below: clr.w list_click_timer
+        cmp.w #PAGE_Y+ROW_H,d1
         bhs .wait
         cmp.w #160,d0                   ; the page line
         bhs.s .next
@@ -1391,6 +1385,7 @@ list_page:
         bhs .wait
         move.w d2,current_page
 .turned:
+        clr.w list_click_timer
         move.w current_page,d7          ; the page's first level selected, so
         mulu #ROWS,d7                   ; that Play and Edit take one shown
         bsr select_entry
@@ -1407,7 +1402,8 @@ list_page:
         moveq #1,d0
         cmp.b #KEY_DOWN,d1
         bne .wait
-.move:  move.w selected,d7              ; the level above or below
+.move:  clr.w list_click_timer
+        move.w selected,d7              ; the level above or below
         bmi .wait
         add.w d0,d7
         bmi .wait
@@ -1417,6 +1413,7 @@ list_page:
         bsr list_draw_rows
         bra .wait
 .button:
+        clr.w list_click_timer
         cmp.w #LIST_BUTTON_NEW,d0
         beq.s .new
         cmp.w #LIST_BUTTON_RENAME,d0
@@ -1954,13 +1951,21 @@ new_page:
         rts
 
 ; D0 a key: a character of a file name is added to new_name, Backspace or
-; Del takes the last off. -> Z clear when the name changed.
+; Del takes the last off, Shift+Backspace/Del or Ctrl+U clears the field.
+; -> Z clear when the name changed.
 name_key:
         cmp.b #8,d0
-        beq.s .delete
+        beq.s .bksp
         cmp.b #$7f,d0
-        beq.s .delete
-        bsr name_char
+        beq.s .bksp
+        tst.b G_MODIFIERS+2(a5)         ; Control held
+        beq.s .char
+        cmp.b #'u',d0
+        beq.s .clear
+        cmp.b #'U',d0
+        beq.s .clear
+        bra.s .same
+.char:  bsr name_char
         bne.s .same
         moveq #0,d1
         move.b new_length,d1
@@ -1970,10 +1975,15 @@ name_key:
         move.b d0,0(a0,d1.w)
         addq.b #1,new_length
         bra.s .changed
-.delete:
+.bksp:  tst.b G_MODIFIERS(a5)           ; Shift held: clear the whole field
+        bne.s .clear
         tst.b new_length
         beq.s .same
         subq.b #1,new_length
+        bra.s .changed
+.clear: tst.b new_length
+        beq.s .same
+        clr.b new_length
 .changed:
         moveq #1,d0
         rts
@@ -2063,6 +2073,11 @@ new_draw:
         lea s_size_label(pc),a0
         move.w #NEW_SHAPE_Y,d1
         bsr new_label
+        move.w #NEW_NOTE_Y,d1
+        moveq #0,d2
+        bsr txt_centre_colour
+        lea s_new_note(pc),a0
+        bsr txt_str
         bsr txt_draw
         bsr new_draw_fields
         lea new_buttons(pc),a0
@@ -2299,10 +2314,26 @@ new_skills:     ; Climber, Floater, Exploder, Blocker, Builder, Basher,
 menu_open:                              ; background shown, colours black
         GCALL unpack_menu
         GCALL show_menu
-        bsr menu_black
+        bsr.s menu_black
         moveq #MENU,d0
         GCALL copper
         rts
+
+; The menu screen's colours black, as menu_open leaves them.
+menu_black:
+        movea.l cop_menu,a0
+.colour:
+        move.w (a0)+,d0
+        cmp.w #$ffff,d0
+        beq.s .done
+        cmp.w #COLOR00,d0
+        blo.s .next
+        cmp.w #COLOR31,d0
+        bhi.s .next
+        clr.w (a0)
+.next:  addq.l #2,a0
+        bra.s .colour
+.done:  rts
 
 menu_fade_in:
         movea.l pal_menu,a0
@@ -2614,7 +2645,7 @@ set_pixel:                              ; D0 x, D1 y, D2 colour, A0 bitmap
 
 s_levels:         dc.b "Levels",0
 s_list_title:     dc.b "Custom Levels",0
-s_list_help:      dc.b "Click a level, or use the cursor keys",0
+s_list_help:      dc.b "Double-click to edit, or cursor keys",0
 s_no_level:       dc.b "There is no level yet: make one with New",0
 s_damaged_only:   dc.b "A damaged file: only Rename or Delete",0
 h_play_level:     dc.b "Play the selected level (P)",0
@@ -2642,6 +2673,7 @@ s_lvl:            dc.b ".lvl",0
 s_left_arrow:     dc.b "<  ",0
 s_right_arrow:    dc.b "  >",0
 s_by:             dc.b " x ",0
+s_new_note:       dc.b "Style and size cannot be changed later",0
 s_new_help:       dc.b "Type a name. Cursor keys: style and size",0
 s_need_name:      dc.b "Type a name for the file first",0
 s_list_full:      dc.b "The list is full: 512 levels",0
@@ -2764,7 +2796,7 @@ level_slot:     ds.w 1                  ; +50 the Param mode's skill slot
 new_style:      ds.w 1                  ; +52 the New page's style
 new_shape:      ds.w 1                  ; +54 and map shape
 resuming:       ds.b 1                  ; +56 the edit view is built again
-skills_wanted:  ds.b 1                  ; +57 the picker after this pass
+                ds.b 1                  ; +57 unused (was skills_wanted)
 new_length:     ds.b 1                  ; +58 the New page's name
                 even
 new_name:       ds.b NEW_NAME_MAX+2     ; +60
@@ -2783,6 +2815,8 @@ page_read:      ds.w 1                  ; +134 the list's page in entries, or -1
 anim_tick:      ds.w 1                  ; +136 passes the preview or the object
                                         ; page has animated; frame = tick mod frames
 
+list_click_timer: ds.w 1                ; fields left for a list double-click
+list_click_entry: ds.w 1                ; entry of the first click
 names_left:     ds.w 1
 next_name:      ds.l 1
 check_place:    ds.w 5                  ; check_placements: a placement, big-endian
