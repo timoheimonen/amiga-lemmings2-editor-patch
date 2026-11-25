@@ -1,4 +1,4 @@
-; Lemmings 2: The Tribes In-Game Level Editor V1.2.2
+; Lemmings 2: The Tribes In-Game Level Editor V1.2.3
 ; Copyright (c) 2026 Timo Heimonen <timo.heimonen@proton.me>
 ; Licensed under the MIT License. See the LICENSE file for details.
 ;
@@ -63,6 +63,7 @@
 ; Hunk 1: the play display's copper list, the play colours and pointer
 COP_PLAY_COLOURS equ $00034     ; its first colour move
 COP_DIWSTOP     equ $00100      ; move DIWSTOP,$f4c2
+COP_PLAY_BG     equ $00144      ; move COLOR00: play-area background below top border
 COP_PLAY_END    equ $001c4      ; its end, $fffffffe
 PAL_PLAY        equ $00838      ; the colours play fades in to
 PTR_CROSS       equ $0449c      ; the play pointer
@@ -192,6 +193,12 @@ ID_L_BOTTOM     equ 47
 ID_L_WHOLE      equ 48
 ID_L_OK         equ 49
 ID_L_CANCEL     equ 50
+ID_S_PREV       equ 51              ; the skills page
+ID_S_NEXT       equ 52
+ID_S_REMOVE     equ 53
+ID_S_CLEAR      equ 54
+ID_S_OK         equ 55
+ID_S_CANCEL     equ 56
 ID_BRUSH        equ W_TEXT+1
 ID_QUESTION     equ W_TEXT+2
 ID_SHEET        equ W_TEXT+3
@@ -205,6 +212,7 @@ ID_RATE         equ W_TEXT+10
 ID_LOST         equ W_TEXT+11
 ID_TITLE_TEXT   equ W_TEXT+12
 ID_LIMITS_TEXT  equ W_TEXT+13
+ID_SKILLS_INFO  equ W_TEXT+14
 
 WIDGET  macro                       ; x, y, width, id, label, help
         dc.w \1,\2,\3,\4
@@ -281,7 +289,8 @@ edit_enter:
         GCALL video
 .pal:   move.b #SCREEN_EDIT,screen
         sf leaving
-        sf skills_wanted
+        sf skills_pal_want
+        sf skills_pal_shown
         lea edit_irq(pc),a0
         move.l a0,G_CALLBACK(a5)
         move.w #FADE_STEPS,fade_in
@@ -345,8 +354,11 @@ edit_loop:
         beq pieces_pass
         cmp.b #PAGE_TYPES,edit_page
         beq types_pass
+        cmp.b #PAGE_SKILLS,edit_page
+        beq skills_pass
         bsr edit_scroll
         GCALL copy_view
+        sf skills_pal_want              ; back buffer holds the level again
         GCALL view_desc
         st G_PAUSE(a5)                  ; objects drawn, not animated
         GCALL objects
@@ -396,8 +408,6 @@ edit_loop:
         st G_PASS_DONE(a5)
         tst.b leaving
         bne edit_exit
-        tst.b skills_wanted
-        bne skills_flow
         tst.b test_wanted
         bne test_flow
         bra edit_loop
@@ -449,12 +459,15 @@ edit_irq:
         move.l G_FRONT(a5),G_BACK(a5)
         move.l d1,G_FRONT(a5)
         eori.w #1,G_BUFFER(a5)
+        bsr sync_play_palette           ; switch colours with the buffer swap
         bra.s .planes
 .wait:  move.w #4,G_FIELDS(a5)
 .planes:
         GCALL planes
         tst.w fade_in
         beq.s .done
+        tst.b skills_pal_shown
+        bne.s .done
         subq.w #1,fade_in
         bsr fade_up
 .done:  rts
@@ -888,6 +901,7 @@ mode_widgets:
 page_open:
         move.b d0,edit_page
         sf status_hidden
+        clr.w message_passes            ; modal pages show their own help at once
         ; fall through
 
 ; A0 widgets: the bar's table, none under the pointer, all drawn again.
@@ -1588,12 +1602,15 @@ edit_help:
         cmp.b #PAGE_TITLE,edit_page
         bne.s .limits
         lea s_title_help(pc),a0
-        bra.s .show
+        bra .show
 .limits:
         cmp.b #PAGE_LIMITS,edit_page
-        bne.s .tools
+        bne.s .skills
         lea s_limits_help(pc),a0
-        bra.s .show
+        bra .show
+.skills:
+        cmp.b #PAGE_SKILLS,edit_page
+        beq skills_help
 .tools: cmp.b #PAGE_PIECES,edit_page
         beq.s .page
         cmp.b #PAGE_TYPES,edit_page
@@ -1777,6 +1794,8 @@ widget_state:
         cmp.w #ID_T_OK,d0
         beq.s .default_button
         cmp.w #ID_L_OK,d0
+        beq.s .default_button
+        cmp.w #ID_S_OK,d0
         beq.s .default_button
         cmp.w #ID_Q_TEST,d0
         bne.s .tools

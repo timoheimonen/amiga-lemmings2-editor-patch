@@ -1,4 +1,4 @@
-; Lemmings 2: The Tribes In-Game Level Editor V1.2.2
+; Lemmings 2: The Tribes In-Game Level Editor V1.2.3
 ; Copyright (c) 2026 Timo Heimonen <timo.heimonen@proton.me>
 ; Licensed under the MIT License. See the LICENSE file for details.
 ;
@@ -396,7 +396,7 @@ s_rename_title:   dc.b "Rename Level",0
 s_rename_label:   dc.b "Rename",0
 s_delete_warning: dc.b "Deleting cannot be undone.",0
 s_delete_help:    dc.b "Return: delete    Esc: keep",0
-s_rename_help:    dc.b "Type the new name of the file",0
+s_rename_help:    dc.b "Type the new name (Ctrl+U clears)",0
 h_delete_file:    dc.b "Delete the file for good (Return)",0
 h_keep_file:      dc.b "Keep the file (Esc)",0
 h_rename_file:    dc.b "Give the file this name (Return)",0

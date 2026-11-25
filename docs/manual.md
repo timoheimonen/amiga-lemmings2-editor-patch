@@ -38,10 +38,11 @@ title screen works as in the original game.
 ## Pages on the menu screen
 
 The list, the New, Rename and Delete pages and the result page have red
-buttons in two rows. Every button has a key. The bottom line says what
-the button under the pointer does and names its key; otherwise it says
-what you can do on the page, or for a few seconds what just happened. A
-dark button does nothing at the moment; clicking it says why.
+buttons in two rows (an enabled button lights up under the pointer). Every
+button has a key. The bottom line says what the button under the pointer
+does and names its key; otherwise it says what you can do on the page, or
+for a few seconds what just happened. A dark button does nothing at the
+moment; clicking it says why.
 
 ### The list of levels
 
@@ -66,26 +67,27 @@ copies.
 | Delete | Del | Delete the selected file, after a question |
 | Back | Esc | Back to the title screen |
 
-Click a level to select it, or move the selection with the cursor keys
-Up and Down. "< Previous" and "Next >" (or the cursor keys Left and Right)
-turn the pages and select the first level of the page. The list holds up
-to 512 levels (with names of up to 31 characters; files beyond that are
-not shown). Keep only level files in `Levels`: a directory there is not
-listed, and New or Rename to a directory's name stops WHDLoad with an
-error.
+Click a level to select it, double-click a valid level to open it in the
+editor, or move the selection with the cursor keys Up and Down. "< Previous"
+and "Next >" (or the cursor keys Left and Right) turn the pages and select
+the first level of the page. The list holds up to 512 levels (with names of
+up to 31 characters; files beyond that are not shown). Keep only level files
+in `Levels`: a directory there is not listed, and New or Rename to a
+directory's name stops WHDLoad with an error.
 
 ### New
 
 The page shows the editor's version below its title. Type the file
 name: letters, digits, `-` and `_`, up to 20 characters; Backspace takes
-one back, and `.lvl` is added. Choose the style (the
+one back, `Ctrl+U` or `Shift+Backspace` clears the field, and `.lvl` is
+added. Choose the style (the
 twelve tribes' styles) and the size (seven map sizes, from 82x24 to 22x84
 cells) by clicking the left or the right half of their rows, or with the
 cursor keys: Left and Right for the style, Up and Down for the size.
 **Create** (Return) writes the level and opens it in the editor;
 **Cancel** (Esc or the right button) goes back. A name that a level or
 another file has already is refused. The style and the size cannot be
-changed later.
+changed later (as the page notes below Size).
 
 A new level has the file name as its title, the original Lemmings' eight
 skills with ten of each (in every style but Classic without the Blocker,
@@ -124,14 +126,14 @@ and the **editor bar** below it:
 Terrain Objects Param Test          Undo Redo Save Menu
 (the tools of the mode)
 (the status: what is under the pointer)              Unsaved
-(help: the button under the pointer and its key, or a message) V1.2.2 by Timo Heimonen
+(help: the button under the pointer and its key, or a message) V1.2.3 by Timo Heimonen
 ```
 
 The active mode and the tools that are on are lit; a button that does
 nothing at the moment is dark; "Unsaved" shows that the level has changes
 that are not saved. Hold the pointer over a button to see what it does
 and its key. The editor's version is at the right end of the help line,
-in blue, when the help leaves room for it (shortened to "V1.2.2 by Timo
+in blue, when the help leaves room for it (shortened to "V1.2.3 by Timo
 H." when only that fits); the help always comes first.
 
 **Scrolling**: move the pointer to the left, right or top edge of the
@@ -159,7 +161,7 @@ the brush's tiles.
 
 | Button | Key | What it does |
 | --- | --- | --- |
-| Types | P | Choose the type of object to place: entrances, exits, water, traps and devices, scenery |
+| Types | P | Choose the type of object to place: entrances, exits, water, traps and devices, scenery (scroll with Up/Down or the top/bottom edges of the screen) |
 | Delete | Del, or the right button on an object | Delete the selected object |
 | W - + | - and + (or =) | Fewer or more copies side by side, for objects that repeat |
 | H - + | [ and ] | Fewer or more copies one under another |
@@ -194,8 +196,8 @@ to 7).
 
 | Button | Key | What it does |
 | --- | --- | --- |
-| Title | N | Type the level's title, up to 24 characters (Return keeps it, Esc the old one) |
-| Skills | P | Choose the eight skills with the game's own skill picker (Esc or the right button keeps the old ones); it offers only the skills the level's style can use |
+| Title | N | Type the level's title, up to 24 characters (`Ctrl+U` or `Shift+Backspace` clears it, Return keeps it, Esc the old one) |
+| Skills | P | Open the skills page in the edit view (below) to replace, add, swap or remove skills |
 | Remove | Del | Remove the selected skill |
 | Count - + | - and + (or =) | The selected skill's count, 1 to 99 |
 | < > | , and . | Select the skill to the left or right (or click it in the panel) |
@@ -208,14 +210,27 @@ to 7).
 A level always has 60 lemmings: the game takes the number from the
 tribe's progress, and a custom level has none.
 
-**Skills and the style.** Two skills work only in some styles: the
-**Blocker** only in Classic levels, the **Attractor** in every style but
-Classic. In a Classic level the picker shows the Blocker in the
-Attractor's place; in the other styles it shows the Attractor and has no
-Blocker. A level made elsewhere with such a skill loses it when it is
-opened, with a message, and the level is unsaved until you save it; when
-it is played from the list, it is played without that skill and its file
-stays as it is.
+**Skills and the style.** **Skills** (P) opens a grid of all 50 skills
+directly in the play view while the level's skill panel stays live below.
+A white frame marks the selected slot's skill, plum frames mark the other
+equipped skills, and a gold frame follows the pointer, showing the hovered
+skill's name in the bar. Click a slot in the panel (or press `,` / `.` or
+`<` / `>`) to choose which slot to change, then click a skill in the grid
+to replace it; clicking a skill already in the panel swaps the two slots
+(counts included), and clicking a skill when an empty slot is selected adds
+it there with count 10 and moves to the next empty slot. Right-click a
+panel slot or an equipped skill in the grid (or press **Del** / **Remove**)
+to remove it, **Clear** (`C`) to clear all slots, **OK** (`Return`) to keep
+the changes as a single undo step, or **Cancel** (`Esc`) to restore the
+previous skills.
+
+Two skills work only in some styles: the **Blocker** only in Classic levels,
+the **Attractor** in every style but Classic. In a Classic level the skills
+page shows the Blocker in the Attractor's place; in the other styles it
+shows the Attractor and has no Blocker. A level made elsewhere with such a
+skill loses it when it is opened, with a message, and the level is unsaved
+until you save it; when it is played from the list, it is played without
+that skill and its file stays as it is.
 
 **Scroll limits.** A level scrolls over the whole map unless you limit
 it. **Limits** (Shift+V) opens a page of the bar whose first line names

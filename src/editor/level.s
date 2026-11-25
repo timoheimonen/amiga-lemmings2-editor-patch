@@ -1,4 +1,4 @@
-; Lemmings 2: The Tribes In-Game Level Editor V1.2.2
+; Lemmings 2: The Tribes In-Game Level Editor V1.2.3
 ; Copyright (c) 2026 Timo Heimonen <timo.heimonen@proton.me>
 ; Licensed under the MIT License. See the LICENSE file for details.
 ;
@@ -13,62 +13,41 @@
 ; (edit.s) calls the mode's input, key, action, state, text, help and
 ; drawing routines here; undo.s calls level_shown after an undo or redo.
 ;
-; Skills are chosen with the game's Practice picker ($16172) on the menu
-; screen. Three patches, applied only while it runs, make it the editor's:
-; its frame wait ($1619C) also takes Esc or the right button as "keep the
-; old skills", the eighth choice returns ($161B6, where Practice goes on
-; to its levels) and the prompt is the editor's ($1647A). Three more
-; offer the skills the level's style can use: the picker's grid holds IDs
-; 1 to 50, and in a Classic-style level the Attractor's place holds the
-; Blocker (its icon $16444, its ID $16358, its name $163FA). The menu
-; screen overwrites the play display and the terrain bitmap, so the edit
-; view is built again afterwards as when it was opened (edit_rebuild),
-; with the editor's state kept.
+; Skills are chosen on an in-view page (PAGE_SKILLS) drawn directly into
+; the play area using the game's own panel sprites (A5+$23A, group 1) and
+; Practice palette (hunk 1 + $A44), while the skill panel below stays live
+; and interactive. The 50 style-valid skills fit on one 10x5 grid without
+; scrolling, fading or rebuilding the level: clicking a skill replaces or
+; fills the selected slot (swapping if it is already in another occupied
+; slot), clicking any panel slot selects it (empty slots select the first
+; empty one), right-clicking removes a skill, Clear empties all eight slots,
+; OK keeps the changes as one undo step and Cancel restores the old skills.
 ;
 ; Two skills work only with some styles: the Attractor's tables have no
 ; Classic entry ($A720), and the Blocker's grid is cleared and read only
-; in the Classic style ($D332, $9C8E). A level opened or played loses such
-; a skill (skills_fit).
+; in the Classic style ($D332, $9C8E). In a Classic-style level the Blocker
+; takes the Attractor's place on the grid; a level opened or played loses a
+; skill its style cannot use (skills_fit).
 ;
 ; Game addresses are offsets in the game's hunk 0 unless another hunk is
 ; named; so are the absolute operands of the game's instructions quoted
 ; below. A5 is the game's globals. The record's words are little-endian
 ; (get_le, put_le), the parsed header's big-endian.
 
-; Game routines, hunk 0
-        GAME G_PICKER,$16172,$15ea6             ; SelectPracticeSkills: eight IDs to A5+$1A0
+; Game routines and data, hunk 0
         GAME G_PANEL,$0f84a,$0f5b4              ; the skill panel, drawn from the header
         GAME G_PANEL_SLOT,$0f8d8,$0f642         ; D0 a slot: its highlight and its name
         GAME G_PANEL_COUNT,$0f98c,$0f6f6        ; D0 a count, D1 a slot: its digits
         GAME G_CLOCK,$0fa14,$0f77e              ; the panel's clock, when A5+$1DB is set
-        GAME G_FRAME_END,$01396,$01376          ; wait for the interrupt's A5+$1C4
-
-; Patched only while the picker runs, hunk 0
-        GAME P_PICKER_FRAME,$1619c,$15ed0       ; jsr WaitFrame.l, in its loop
-        GAME P_PICKER_DONE,$161b6,$15eea        ; movea.l ($1C104).l,a0: after the eighth
-        GAME P_PICKER_PROMPT,$16478,$161ac      ; lea ($16486).l,a0: its prompt
-        GAME PICKER_PROMPT,$16486,$161ba
-        GAME P_PICKER_ICON,$16444,$16178        ; bsr.w $10ABC / addi.w #32,d0: a grid icon
-        GAME PICKER_ICON_BSR,$6100a676,$6100a6ac ; that bsr.w G_SPRITE
-        GAME P_PICKER_PICK,$16358,$1608c        ; addq.w #1,d0 / move.l d0,-(sp) /
-                                ; lea $1a0(a5),a1: the ID clicked
-        GAME P_PICKER_NAME,$163fa,$1612e        ; addq.w #1,d0 / lea ($1C10C).l,a0: the
-                                ; name of the ID under the pointer
         GAME SKILL_NAMES,$1c10c,$1bdd4          ; 14 bytes a skill ID
-        GAME DESCRIPTOR_7,$1c104,$1bdcc         ; the menu screen's descriptor (a pointer)
-D_PLANES        equ $22         ; the planes its sprites are drawn in
         GAME G_SHAPES,$1c5a2,$1c248             ; seven BE16 pairs: columns, rows
-
-; Hunk 1
-COP_MENU_SPRITES equ $544       ; the menu list's sprite pointers (the
-                                ; picker's slot frame)
 
 ; Game globals (A5)
 G_COUNTS        equ $164
 G_MINUTES       equ $176
 G_SECONDS       equ $178
-G_PICKED        equ $1a0        ; the picker's eight IDs
 G_CLOCK_DUE     equ $1db
+        GAME G_PANEL_SPRITES,$23a,$238          ; panel sprites FORM (group 1: 51 skills)
 
 ; The parsed header (hunk 0 $18D16)
 H_SKILLS        equ $18         ; eight BE16 IDs
@@ -109,6 +88,17 @@ MODE_OBJECTS    equ 1
 MODE_LEVEL      equ 2
 PAGE_TITLE      equ 4
 PAGE_LIMITS     equ 5
+PAGE_SKILLS     equ 6
+
+; The skills grid inside the 320x160 play area (10x5 of 32x24 pixels)
+SKILLS_COLS     equ 10
+SKILLS_ROWS     equ 5
+SKILLS_CELL_W   equ 32
+SKILLS_CELL_H   equ 24
+SKILLS_TOP      equ 20          ; vertically centred (20..139)
+SKILLS_COL_HOVER equ 8          ; PAL_PRACTICE: light grey/white
+SKILLS_COL_SEL  equ 1           ; PAL_PRACTICE: bright gold
+SKILLS_COL_USED equ 10          ; PAL_PRACTICE: medium plum
 
 ROW_C           equ 26          ; the Param mode's second row of tools
 
@@ -200,7 +190,7 @@ level_action:
         cmp.w #ID_TITLE,d0
         beq title_open
         cmp.w #ID_SKILLS,d0
-        beq skills_ask
+        beq skills_open
         cmp.w #ID_REMOVE,d0
         beq skill_remove
         cmp.w #ID_COUNT_LESS,d0
@@ -241,17 +231,32 @@ level_action:
         beq limits_ok
         cmp.w #ID_L_CANCEL,d0
         beq mode_widgets
+        cmp.w #ID_S_PREV,d0
+        beq skills_slot_prev
+        cmp.w #ID_S_NEXT,d0
+        beq skills_slot_next
+        cmp.w #ID_S_REMOVE,d0
+        beq skills_remove
+        cmp.w #ID_S_CLEAR,d0
+        beq skills_clear
+        cmp.w #ID_S_OK,d0
+        beq skills_ok
+        cmp.w #ID_S_CANCEL,d0
+        beq skills_cancel
         rts
 
-; A click in the panel: the skill under the pointer is selected.
+; A click in the panel: an occupied slot is selected; an empty slot selects
+; the first empty slot so Skills (P) can add a skill directly into it.
 panel_click:
         move.w G_CURSOR_X(a5),d0
         cmp.w #SKILL_AREA,d0
         bhs .done
         lsr.w #5,d0
         bsr skill_id
-        beq .done
-        bra select_skill
+        bne select_skill
+        bsr skills_first_empty
+        cmp.w #SKILL_SLOTS,d0
+        blo select_skill
 .done:  rts
 
 ;----------------------------------------------------------------------------
@@ -385,19 +390,9 @@ count_change:
 ; is empty, as in the shipped levels.
 skill_remove:
         move.w level_slot,d0
-        bsr skill_id                    ; -> A0 its record word
+        bsr skill_id
         beq .done
-        lea edit_record+R_COUNTS,a1
-        adda.w d0,a1
-        moveq #SKILL_SLOTS-2,d1
-        sub.w d0,d1
-        bmi .last
-.move:  move.b 2(a0),(a0)+
-        move.b 2(a0),(a0)+
-        move.b 1(a1),(a1)+
-        dbra d1,.move
-.last:  clr.w (a0)
-        clr.b (a1)
+        bsr.s skill_shift_out
         move.w level_slot,d0            ; on the last skill when this was
         bsr skill_id
         bne .shown
@@ -410,6 +405,25 @@ skill_remove:
         bsr set_message
         bra level_changed
 .done:  rts
+
+; D0 a slot: its skill removed, the later ones shifted left, slot 7 empty.
+; Preserves D0.
+skill_shift_out:
+        movem.l d0-d1/a0-a1,-(sp)
+        bsr skill_id                    ; -> A0 its record word
+        lea edit_record+R_COUNTS,a1
+        adda.w d0,a1
+        moveq #SKILL_SLOTS-2,d1
+        sub.w d0,d1
+        bmi .last
+.move:  move.b 2(a0),(a0)+
+        move.b 2(a0),(a0)+
+        move.b 1(a1),(a1)+
+        dbra d1,.move
+.last:  clr.w (a0)
+        clr.b (a1)
+        movem.l (sp)+,d0-d1/a0-a1
+        rts
 
 ; After an undo or redo: the record's fields into the parsed header and the
 ; play state (the title, the time and clock, the scroll words, the best
@@ -983,7 +997,8 @@ title_ok:
 
 ; Keys on the title page: characters of the game's font (32 to 122, '#'
 ; aside, which its text streams take for a number) are added, Backspace
-; and Del take the last off, Return keeps the title, Esc the old one.
+; and Del take the last off, Shift+Backspace/Del or Ctrl+U clears the title,
+; Return keeps the title, Esc the old one.
 title_input:
         bsr widget_at
         move.w key_char,d0
@@ -993,10 +1008,17 @@ title_input:
         cmp.b #KEY_ESC,d0
         beq mode_widgets
         cmp.b #8,d0
-        beq .delete
+        beq .bksp
         cmp.b #$7f,d0
-        beq .delete
-        cmp.b #' ',d0
+        beq .bksp
+        tst.b G_MODIFIERS+2(a5)         ; Control held
+        beq .char
+        cmp.b #'u',d0
+        beq .clear
+        cmp.b #'U',d0
+        beq .clear
+        bra .mouse
+.char:  cmp.b #' ',d0
         blo .mouse
         cmp.b #'z',d0
         bhi .mouse
@@ -1011,10 +1033,16 @@ title_input:
         addq.b #1,title_length
         st fields_changed
         bra .mouse
-.delete:
+.bksp:  tst.b G_MODIFIERS(a5)           ; Shift held: clear the title
+        bne .clear
         tst.b title_length
         beq .mouse
         subq.b #1,title_length
+        st fields_changed
+        bra .mouse
+.clear: tst.b title_length
+        beq .mouse
+        clr.b title_length
         st fields_changed
 .mouse: tst.b G_LEFT_CLICK(a5)
         beq .done
@@ -1023,257 +1051,653 @@ title_input:
 .done:  rts
 
 ;----------------------------------------------------------------------------
-; The skill picker
-
-; The Skills button: the picker runs at the end of the pass, from the play
-; loop's stack (edit_loop).
-skills_ask:
-        st skills_wanted
-        rts
-
-; The game's Practice picker on the menu screen, then the edit view built
-; again. Jumped to from edit_loop at the end of a pass.
-skills_flow:
-        sf skills_wanted
-        bsr view_leave
-        move.b #SCREEN_PICKER,screen
-        bsr pointer_normal
-        bsr menu_black
-        moveq #MENU,d0
-        GCALL copper
-        bsr picker_call
-        tst.b picker_cancel
-        bne .kept
-        bsr skills_from_picker
-        bra .fade
-.kept:  lea s_skills_kept(pc),a0
-        moveq #UI_INK,d0
-        bsr set_message
-.fade:  bsr menu_fade_out
-        ; fall through
+; The in-view skills page (PAGE_SKILLS)
 
 ; The edit view built again from the record as when it was opened, the
 ; editor's state (mode, view, brush, selections, unsaved changes) kept.
+; Called by undo.s when returning from test play.
 edit_rebuild:
         st resuming
         bra build_record
 
-; The picker with its six temporary patches, the original bytes kept aside
-; meanwhile; picker_cancel is set when Esc or the right button kept the old
-; skills.
-picker_call:
-        moveq #0,d0
-        bsr picker_bytes                ; the original bytes aside
-        movea.l hunk0,a2
-        adda.l #P_PICKER_FRAME,a2
-        lea picker_frame(pc),a0
-        move.l a0,2(a2)                 ; jsr picker_frame
-        movea.l hunk0,a2
-        adda.l #P_PICKER_DONE,a2
-        move.w #$4e75,(a2)              ; rts
-        movea.l hunk0,a2
-        adda.l #P_PICKER_PROMPT,a2
-        lea picker_prompt(pc),a0
-        move.l a0,2(a2)
-        lea picker_hooks(pc),a0
-        bsr patch_hooks
-        lea edit_record+R_STYLE,a0
-        bsr get_le
-        tst.w d1
-        seq picker_classic
-        bsr flush_cache
-        bsr menu_descriptor             ; the skill icons have four planes
-        move.w #4,D_PLANES(a0)
-        sf picker_cancel
-        clr.b G_RIGHT_CLICK(a5)
-        GCALL picker
-        moveq #1,d0
-        bsr picker_bytes                ; the original bytes again
-        bsr flush_cache
-        ; what the game does after the eighth choice ($161B6..$161DC)
-        bsr menu_descriptor
-        move.w #5,D_PLANES(a0)
-        GCALL frame_end
-        movea.l hunk1,a0
-        lea COP_MENU_SPRITES(a0),a0
-        clr.w 2(a0)
-        clr.w 6(a0)
-        clr.w $a(a0)
-        clr.w $e(a0)
-        rts
-
-; The first eight bytes of the picker's patch points kept aside in
-; picker_saved (D0 = 0) or put back (D0 = 1). Changes D1/A0-A2.
-picker_bytes:
-        lea picker_points(pc),a0
-        lea picker_saved,a1
-        moveq #PICKER_POINTS-1,d1
-.point: movea.l hunk0,a2
-        adda.l (a0)+,a2
-        tst.w d0
-        bne.s .back
-        move.l (a2)+,(a1)+
-        move.l (a2),(a1)+
-        bra.s .next
-.back:  move.l (a1)+,(a2)+
-        move.l (a1)+,(a2)
-.next:  dbra d1,.point
-        rts
-
-picker_points:
-        dc.l P_PICKER_FRAME,P_PICKER_DONE,P_PICKER_PROMPT
-        dc.l P_PICKER_ICON,P_PICKER_PICK,P_PICKER_NAME
-PICKER_POINTS   equ 6
-
-picker_hooks:
-        HOOK P_PICKER_ICON,$4eb9,picker_icon    ; jsr
-        HOOK P_PICKER_PICK,$4eb9,picker_pick    ; jsr
-        HOOK P_PICKER_NAME,$4eb9,picker_name    ; jsr
-        dc.l -1
-
-; -> A0 the menu screen's display descriptor.
-menu_descriptor:
-        movea.l hunk0,a0
-        adda.l #DESCRIPTOR_7,a0
-        movea.l (a0),a0
-        rts
-
-; Called by the picker's loop instead of WaitFrame ($138A): Esc or the
-; right button leaves the picker; its loop keeps the stack as on entry, so
-; dropping this call's return address returns from the picker.
-picker_frame:
-        movem.l d0-d2/a0-a1/a4,-(sp)
-        GCALL wait_frame
-        moveq #1,d2
-        tst.b G_RIGHT_CLICK(a5)         ; from the loop's last $9A2
-        bne.s .out
-        GCALL key
-        cmp.b #KEY_ESC,d0
-        beq.s .out
-        moveq #0,d2
-.out:   tst.w d2
-        movem.l (sp)+,d0-d2/a0-a1/a4    ; the flags stay
-        bne.s .leave
-        rts
-.leave: st picker_cancel
-        addq.l #4,sp
-        rts
-
-; Called by the picker instead of "bsr.w $10ABC / addi.w #32,d0" ($16444)
-; as it draws its fifty icons, D5 the frame (the ID - 1): in a Classic-style
-; level the Blocker's icon in the Attractor's place.
-picker_icon:
-        movem.l d5/a4,-(sp)
-        tst.b picker_classic
-        beq.s .draw
-        cmp.w #SKILL_ATTRACTOR-1,d5
-        bne.s .draw
-        moveq #SKILL_BLOCKER-1,d5
-.draw:  GCALL sprite
-        movem.l (sp)+,d5/a4
-        add.w #32,d0                    ; the next place to the right
-        rts
-
-; Called instead of "addq.w #1,d0 / move.l d0,-(sp) / lea $1a0(a5),a1"
-; ($16358), D0 the clicked icon's place in the grid: the skill it stands
-; for, kept on the stack as the game keeps its ID.
-picker_pick:
-        addq.w #1,d0
-        bsr.s picker_skill
-        movea.l (sp)+,a1                ; the return address
-        move.l d0,-(sp)
-        move.l a1,-(sp)
-        lea G_PICKED(a5),a1
-        rts
-
-; Called instead of "addq.w #1,d0 / lea ($1C10C).l,a0" ($163FA), D0 the
-; place of the icon under the pointer: the name of the skill it stands for.
-picker_name:
-        addq.w #1,d0
-        bsr.s picker_skill
-        movea.l hunk0,a0
-        adda.l #SKILL_NAMES,a0
-        rts
-
-; D0 a place in the grid + 1, the game's ID for it -> the skill it stands
-; for in this level: the Blocker in the Attractor's place when the level
-; is in the Classic style.
-picker_skill:
-        tst.b picker_classic
-        beq.s .done
-        cmp.w #SKILL_ATTRACTOR,d0
-        bne.s .done
-        moveq #SKILL_BLOCKER,d0
-.done:  rts
-
-; The picker's eight skills into the record: a skill the level had keeps
-; its count, a new one gets NEW_COUNT.
-skills_from_picker:
-        lea edit_record+R_SKILLS,a0     ; the IDs and the counts after them
-        lea old_skills,a1
+; Open PAGE_SKILLS: back up the current 8 skills and counts (for Cancel and
+; for keeping old counts of re-picked skills), finish any entry fade, and
+; open the bar page. The palette switches to PAL_PRACTICE on the exact VBlank
+; that swaps the first drawn grid into the front buffer (sync_play_palette).
+skills_open:
+        lea edit_record+R_SKILLS,a0
+        lea skills_backup,a1
         moveq #3*SKILL_SLOTS-1,d0
 .keep:  move.b (a0)+,(a1)+
         dbra d0,.keep
-        lea G_PICKED(a5),a2
-        lea edit_record+R_SKILLS,a0
-        lea edit_record+R_COUNTS,a3
-        moveq #SKILL_SLOTS-1,d7
-.slot:  move.w (a2)+,d1                 ; a chosen ID
-        bsr put_le
-        addq.l #2,a0
-        moveq #NEW_COUNT,d2
-        lea old_skills,a1
-        lea old_skills+2*SKILL_SLOTS,a4 ; their counts
-        moveq #SKILL_SLOTS-1,d3
-.find:  moveq #0,d4
-        move.b 1(a1),d4
-        lsl.w #8,d4
-        move.b (a1),d4
-        addq.l #2,a1
-        cmp.w d1,d4
-        bne.s .next
-        tst.b (a4)
-        beq.s .next
-        move.b (a4),d2
-.next:  addq.l #1,a4
-        dbra d3,.find
-        move.b d2,(a3)+
-        dbra d7,.slot
-        clr.w level_slot
-        bra level_changed
+        move.w level_slot,skills_old_slot
+        lea edit_record+R_STYLE,a0
+        bsr get_le
+        tst.w d1
+        seq skills_classic
+        move.w fade_in,d0               ; finish any entry fade before the
+        clr.w fade_in                   ; copper colours switch
+        bra.s .fade_test
+.fade:  move.w d0,-(sp)
+        bsr fade_up
+        move.w (sp)+,d0
+.fade_test:
+        dbra d0,.fade
+        moveq #PAGE_SKILLS,d0
+        lea skills_widgets(pc),a0
+        bsr page_open
+        bra panel_highlight
 
-; The menu screen's colours black, as menu_open leaves them.
-menu_black:
-        movea.l cop_menu,a0
-.colour:
-        move.w (a0)+,d0
-        cmp.w #$ffff,d0
+; Called from edit_irq right after swapping G_FRONT and G_BACK: updates the
+; 16 play-area colour moves in hunk 1 when switching between the level view
+; and PAGE_SKILLS, so neither view flashes in the other's palette.
+sync_play_palette:
+        movem.l d0/a0-a1,-(sp)
+        move.b skills_pal_want,d0
+        cmp.b skills_pal_shown,d0
         beq.s .done
-        cmp.w #COLOR00,d0
-        blo.s .next
-        cmp.w #COLOR31,d0
-        bhi.s .next
-        clr.w (a0)
-.next:  addq.l #2,a0
-        bra.s .colour
-.done:  rts
-
-flush_cache:
-        movem.l d0-d1/a0-a2,-(sp)
-        movea.l resload_base,a2
-        jsr resload_FlushCache(a2)
-        movem.l (sp)+,d0-d1/a0-a2
+        move.b d0,skills_pal_shown
+        movea.l pal_play,a0
+        tst.b d0
+        beq.s .copy
+        movea.l pal_practice,a0
+.copy:  movea.l hunk1,a1
+        move.w (a0),COP_PLAY_BG+2(a1)   ; play-area background colour 0
+        lea COP_PLAY_COLOURS+2(a1),a1
+        moveq #16-1,d0
+.col:   move.w (a0)+,(a1)
+        addq.l #4,a1
+        dbra d0,.col
+.done:  movem.l (sp)+,d0/a0-a1
         rts
 
-; The picker's prompt: a text stream of the menu screen.
-picker_prompt:
-        dc.b MENU
-        dc.b 7,0,$88/2,320/2,200/2,5,8,1
-        dc.b "Choose the 8 skills of the level."
-        dc.b 7,0,$94/2,320/2,200/2,5,8,1
-        dc.b "Right button or Esc: keep the old ones."
-        dc.b 0
-        even
+; One pass of PAGE_SKILLS (dispatched from edit_loop).
+skills_pass:
+        bsr scroll_flags_clear          ; the display does not scroll
+        GCALL view_desc
+        GCALL buttons
+        bsr read_key
+        bsr update_pointer
+        bsr skills_draw
+        bsr skills_input
+        bsr skills_frames
+        bsr edit_help
+        bsr skills_status
+        bsr bar_refresh
+        st skills_pal_want              ; G_BACK holds the skills grid
+        st G_PASS_DONE(a5)
+        bra edit_loop
+
+; Clear the play area of G_BACK and draw the 50 style-valid skill icons in
+; a 10x5 grid (32x24 pixels each) using the game's panel sprites (A5+$23A,
+; group 1, mode 4 masked word-aligned CPU draw).
+skills_draw:
+        movem.l d0-d7/a0-a2,-(sp)
+        bsr wait_blit
+        movea.l G_BACK(a5),a0
+        lea VIEW_EDGE*VIEW_ROW(a0),a0
+        moveq #3,d1
+.plane: movea.l a0,a1
+        move.w #SCREEN_ROWS*VIEW_ROW/4-1,d0
+.clear: clr.l (a1)+
+        dbra d0,.clear
+        lea VIEW_PLANE(a0),a0
+        dbra d1,.plane
+        movea.l G_PANEL_SPRITES(a5),a0
+        move.w G_SCROLL_Y(a5),d1
+        add.w #VIEW_EDGE+SKILLS_TOP,d1
+        moveq #4,d2                     ; masked CPU draw, 4 planes
+        moveq #0,d3                     ; play view descriptor (G_BACK)
+        moveq #1,d4                     ; group 1: skill icons
+        suba.l a2,a2                    ; place 0..49
+        moveq #SKILLS_ROWS-1,d7
+.row:   move.w G_SCROLL_X(a5),d0
+        add.w #VIEW_EDGE,d0
+        moveq #SKILLS_COLS-1,d6
+.col:   move.w a2,d5
+        tst.b skills_classic
+        beq.s .icon
+        cmp.w #SKILL_ATTRACTOR-1,d5
+        bne.s .icon
+        moveq #SKILL_BLOCKER-1,d5
+.icon:  GCALL sprite
+        addq.w #1,a2
+        add.w #SKILLS_CELL_W,d0
+        dbra d6,.col
+        add.w #SKILLS_CELL_H,d1
+        dbra d7,.row
+        movem.l (sp)+,d0-d7/a0-a2
+        rts
+
+; Outlines on the skills grid: inner 30x22 boxes for skills currently in the
+; level (gold for the selected slot, medium plum for the other slots), and an
+; outer 32x24 white box around the skill under the pointer.
+skills_frames:
+        movem.l d0-d5,-(sp)
+        moveq #0,d0
+.slot:  bsr skill_id
+        beq.s .next
+        bsr skills_place_of
+        bmi.s .next
+        moveq #SKILLS_COL_USED,d4
+        cmp.w level_slot,d0
+        bne.s .draw
+        moveq #SKILLS_COL_SEL,d4
+.draw:  moveq #1,d5                     ; inner 30x22 box
+        bsr skills_box
+.next:  addq.w #1,d0
+        cmp.w #SKILL_SLOTS,d0
+        blo.s .slot
+        bsr skills_hit
+        tst.w d0
+        bmi.s .done
+        moveq #SKILLS_COL_HOVER,d4
+        moveq #0,d5                     ; outer 32x24 box
+        bsr skills_box
+.done:  movem.l (sp)+,d0-d5
+        rts
+
+; Draw a 1-pixel frame in G_BACK at grid place D1 (0..49) in PAL_PRACTICE
+; colour D4 (0..15): D5 = 0 outer 32x24, D5 = 1 inner 30x22. Preserves all.
+skills_box:
+        movem.l d0-d7/a0-a1,-(sp)
+        ext.l d1
+        divu #SKILLS_COLS,d1            ; D1.w = row, high word = col
+        move.w d1,d0
+        mulu #SKILLS_CELL_H,d0
+        add.w #VIEW_EDGE+SKILLS_TOP,d0
+        tst.w d5
+        beq.s .y_ok
+        addq.w #1,d0
+.y_ok:  mulu #VIEW_ROW,d0
+        swap d1                         ; col 0..9
+        lsl.w #2,d1                     ; 4 bytes per 32-pixel column
+        addq.w #VIEW_EDGE/8,d1
+        movea.l G_BACK(a5),a0
+        adda.l d0,a0
+        adda.w d1,a0
+        tst.w d5
+        bne.s .inner
+        moveq #-1,d0                    ; $FFFF
+        moveq #-1,d1                    ; $FFFF
+        move.w #$8000,d2
+        moveq #1,d3
+        moveq #SKILLS_CELL_H-3,d6       ; 22 middle rows
+        bra.s .draw
+.inner: move.w #$7fff,d0
+        move.w #$fffe,d1
+        move.w #$4000,d2
+        moveq #2,d3
+        moveq #SKILLS_CELL_H-5,d6       ; 20 middle rows
+.draw:  bsr.s skills_box_row            ; top row
+        exg d0,d2
+        exg d1,d3
+.mid:   lea VIEW_ROW(a0),a0
+        bsr.s skills_box_row
+        dbra d6,.mid
+        lea VIEW_ROW(a0),a0
+        move.w d2,d0
+        move.w d3,d1
+        bsr.s skills_box_row            ; bottom row
+        movem.l (sp)+,d0-d7/a0-a1
+        rts
+
+; Write two word masks D0, D1 into four planes at A0 in colour D4. Preserves all.
+skills_box_row:
+        movem.l d4-d7/a1,-(sp)
+        movea.l a0,a1
+        move.w d0,d5
+        not.w d5
+        move.w d1,d6
+        not.w d6
+        moveq #3,d7
+.plane: lsr.w #1,d4
+        bcc.s .clear
+        or.w d0,(a1)
+        or.w d1,2(a1)
+        bra.s .next
+.clear: and.w d5,(a1)
+        and.w d6,2(a1)
+.next:  lea VIEW_PLANE(a1),a1
+        dbra d7,.plane
+        movem.l (sp)+,d4-d7/a1
+        rts
+
+; Input on PAGE_SKILLS.
+skills_input:
+        bsr widget_at
+        move.w key,d0
+        beq.s .mouse
+        cmp.b #KEY_RETURN,d0
+        beq skills_ok
+        cmp.b #KEY_ESC,d0
+        beq skills_cancel
+        lea skills_keys(pc),a0
+        bsr key_button
+.mouse: tst.b G_LEFT_CLICK(a5)
+        beq.s .right
+        move.w G_CURSOR_Y(a5),d1
+        cmp.w #SCREEN_ROWS,d1
+        blo.s .grid
+        cmp.w #BAR_CURSOR_Y,d1
+        blo skills_panel_click
+        move.w hover,d0
+        bpl widget_click
+        rts
+.grid:  bsr skills_hit
+        tst.w d0
+        bpl skills_grid_click
+        rts
+.right: tst.b G_RIGHT_CLICK(a5)
+        beq.s .done
+        bra skills_right_click
+.done:  rts
+
+skills_keys:
+        dc.w ',',ID_S_PREV
+        dc.w '.',ID_S_NEXT
+        dc.w $7f,ID_S_REMOVE
+        dc.w 'c',ID_S_CLEAR
+        dc.w 0
+
+; Left click on skill ID D0 (1..51) in the grid.
+skills_grid_click:
+        move.w d0,d7                    ; chosen skill ID
+        bsr bar_sound
+        move.w d7,d0
+        bsr skills_find                 ; -> D2 existing slot, or -1
+        move.w level_slot,d0
+        bsr skill_id                    ; -> D1 current skill in level_slot
+        beq .empty
+        cmp.w level_slot,d2
+        beq .done                       ; already this skill in this slot
+        tst.w d2
+        bpl.s .swap
+        ; Replace occupied slot with a skill not currently in the level
+        move.w d7,d0
+        bsr skills_backup_count         ; -> D2 count (old if backed up, else 10)
+        move.w level_slot,d0
+        bsr skill_id                    ; -> A0 its record word
+        move.w d7,d1
+        bsr put_le
+        lea edit_record+R_COUNTS,a0
+        move.b d2,0(a0,d0.w)
+        bsr skills_shown
+        st fields_changed
+        rts
+.swap:  ; Skill D7 is already in slot D2: swap slots level_slot and D2
+        move.w level_slot,d0
+        bsr skill_id                    ; -> D1 id_a, A0 ptr_a
+        move.w d1,d5
+        movea.l a0,a1
+        move.w d2,d0
+        bsr skill_id                    ; -> D1 id_b, A0 ptr_b
+        move.w d1,d6
+        move.w d5,d1
+        bsr put_le                      ; slot D2 <- id_a
+        movea.l a1,a0
+        move.w d6,d1
+        bsr put_le                      ; level_slot <- id_b
+        lea edit_record+R_COUNTS,a0
+        move.w level_slot,d0
+        move.b 0(a0,d0.w),d5
+        move.b 0(a0,d2.w),0(a0,d0.w)
+        move.b d5,0(a0,d2.w)
+        bsr skills_shown
+        st fields_changed
+        lea message_text,a3
+        lea s_swapped(pc),a0
+        bsr put_str
+        move.w d2,d0
+        addq.w #1,d0
+        bsr put_number
+        lea message_text,a0
+        moveq #UI_INK,d0
+        bra set_message
+.empty: tst.w d2
+        bmi.s .add
+        ; level_slot is empty and D7 is already in slot D2: refuse duplicate
+        lea message_text,a3
+        lea s_already_slot(pc),a0
+        bsr put_str
+        move.w d2,d0
+        addq.w #1,d0
+        bsr put_number
+        lea message_text,a0
+        moveq #UI_WARN,d0
+        bra set_message
+.add:   ; Fill empty level_slot and advance to the next slot for rapid picking
+        move.w d7,d0
+        bsr skills_backup_count         ; -> D2 count
+        move.w level_slot,d0
+        bsr skill_id                    ; -> A0 its record word
+        move.w d7,d1
+        bsr put_le
+        lea edit_record+R_COUNTS,a0
+        move.b d2,0(a0,d0.w)
+        cmp.w #SKILL_SLOTS-1,d0
+        bhs.s .added
+        addq.w #1,level_slot
+.added: bsr skills_shown
+        st fields_changed
+.done:  rts
+
+; Click in the skill panel while on PAGE_SKILLS: selects the slot (an empty
+; slot selects the first empty slot so empty slots stay last).
+skills_panel_click:
+        move.w G_CURSOR_X(a5),d0
+        cmp.w #SKILL_AREA,d0
+        bhs.s .done
+        lsr.w #5,d0
+        bsr skill_id
+        bne.s .sel
+        bsr skills_first_empty
+        cmp.w #SKILL_SLOTS,d0
+        bhs.s .done
+.sel:   bsr bar_sound
+        bra select_skill
+.done:  rts
+
+; Right click on PAGE_SKILLS: removes the clicked skill (in the grid or panel).
+skills_right_click:
+        move.w G_CURSOR_Y(a5),d1
+        cmp.w #SCREEN_ROWS,d1
+        blo.s .grid
+        cmp.w #BAR_CURSOR_Y,d1
+        bhs.s .done
+        move.w G_CURSOR_X(a5),d0
+        cmp.w #SKILL_AREA,d0
+        bhs.s .done
+        lsr.w #5,d0
+        bsr skill_id
+        beq.s .done
+        bra.s .rem
+.grid:  bsr skills_hit
+        tst.w d0
+        bmi.s .done
+        bsr skills_find
+        move.w d2,d0
+        bmi.s .done
+.rem:   bsr bar_sound
+        bra.s skills_remove_at
+.done:  rts
+
+skills_slot_prev:
+        tst.w level_slot
+        beq.s .done
+        subq.w #1,level_slot
+        st fields_changed
+        bra panel_highlight
+.done:  rts
+
+skills_slot_next:
+        bsr skills_can_next
+        beq.s .done
+        addq.w #1,level_slot
+        st fields_changed
+        bra panel_highlight
+.done:  rts
+
+skills_remove:
+        move.w level_slot,d0
+        bsr skill_id
+        beq.s skills_remove_done
+        ; fall through
+
+; D0 a slot: removed on PAGE_SKILLS, keeping level_slot at or before the
+; first empty slot.
+skills_remove_at:
+        bsr skill_shift_out
+        bsr skills_first_empty          ; -> D0 first empty (0..8)
+        cmp.w #SKILL_SLOTS,d0
+        blo.s .clamp
+        moveq #SKILL_SLOTS-1,d0
+.clamp: cmp.w level_slot,d0
+        bhs.s .show
+        move.w d0,level_slot
+.show:  bsr skills_shown
+        st fields_changed
+skills_remove_done:
+        rts
+
+; Clear all eight slots on PAGE_SKILLS and select slot 0.
+skills_clear:
+        lea edit_record+R_SKILLS,a0
+        moveq #3*SKILL_SLOTS-1,d0
+.zero:  clr.b (a0)+
+        dbra d0,.zero
+        clr.w level_slot
+        bsr skills_shown
+        st fields_changed
+        rts
+
+; OK: keep the skills; mark dirty/touched as one undo step when they changed,
+; ensure Param mode lands on an occupied slot if any exist.
+skills_ok:
+        lea edit_record+R_SKILLS,a0
+        lea skills_backup,a1
+        moveq #3*SKILL_SLOTS-1,d0
+.cmp:   cmpm.b (a0)+,(a1)+
+        dbne d0,.cmp
+        beq.s .same
+        bsr level_changed
+.same:  move.w level_slot,d0
+.slot:  bsr skill_id
+        bne.s .chosen
+        subq.w #1,d0
+        bpl.s .slot
+        moveq #0,d0
+.chosen:
+        move.w d0,level_slot
+        bsr panel_highlight
+        bra mode_widgets
+
+; Cancel: restore the backed-up skills, counts and selected slot.
+skills_cancel:
+        lea skills_backup,a0
+        lea edit_record+R_SKILLS,a1
+        moveq #3*SKILL_SLOTS-1,d0
+.copy:  move.b (a0)+,(a1)+
+        dbra d0,.copy
+        move.w skills_old_slot,level_slot
+        bsr skills_shown
+        lea s_skills_kept(pc),a0
+        moveq #UI_INK,d0
+        bsr set_message
+        bra mode_widgets
+
+; -> D0 skill ID (1..51) and D1 grid place (0..49) under pointer, or D0 = -1.
+skills_hit:
+        moveq #-1,d0
+        move.w G_CURSOR_Y(a5),d1
+        sub.w #SKILLS_TOP,d1
+        bmi.s .out
+        cmp.w #SKILLS_ROWS*SKILLS_CELL_H,d1
+        bhs.s .out
+        ext.l d1
+        divu #SKILLS_CELL_H,d1
+        mulu #SKILLS_COLS,d1
+        move.w G_CURSOR_X(a5),d0
+        lsr.w #5,d0
+        cmp.w #SKILLS_COLS,d0
+        bhs.s .none
+        add.w d0,d1                     ; D1 = place 0..49
+        move.w d1,d0
+        addq.w #1,d0                    ; 1..50
+        tst.b skills_classic
+        beq.s .out
+        cmp.w #SKILL_ATTRACTOR,d0
+        bne.s .out
+        moveq #SKILL_BLOCKER,d0
+        rts
+.none:  moveq #-1,d0
+.out:   rts
+
+; D1 a skill ID -> D1 its grid place (0..49), or -1 (N set) if not on grid.
+skills_place_of:
+        tst.b skills_classic
+        beq.s .other
+        cmp.w #SKILL_BLOCKER,d1
+        beq.s .attractor
+        cmp.w #SKILL_ATTRACTOR,d1
+        beq.s .none
+        bra.s .range
+.other: cmp.w #SKILL_BLOCKER,d1
+        beq.s .none
+.range: tst.w d1
+        ble.s .none
+        cmp.w #50,d1
+        bhi.s .none
+        subq.w #1,d1
+        rts
+.attractor:
+        moveq #SKILL_ATTRACTOR-1,d1
+        rts
+.none:  moveq #-1,d1
+        rts
+
+; D0 a skill ID -> D2 the slot (0..7) holding it, or -1 (N set). Preserves D0.
+skills_find:
+        movem.l d0-d1/a0,-(sp)
+        move.w d0,d2
+        moveq #0,d0
+.slot:  bsr skill_id
+        cmp.w d2,d1
+        beq.s .found
+        addq.w #1,d0
+        cmp.w #SKILL_SLOTS,d0
+        blo.s .slot
+        moveq #-1,d2
+        bra.s .out
+.found: move.w d0,d2
+.out:   movem.l (sp)+,d0-d1/a0
+        tst.w d2
+        rts
+
+; -> D0 the first empty slot (0..7), or 8 when all slots are filled.
+skills_first_empty:
+        movem.l d1/a0,-(sp)
+        moveq #0,d0
+.slot:  bsr skill_id
+        beq.s .out
+        addq.w #1,d0
+        cmp.w #SKILL_SLOTS,d0
+        blo.s .slot
+.out:   movem.l (sp)+,d1/a0
+        rts
+
+; -> D0 number of occupied skill slots (0..8). Preserves all else.
+skills_count:
+        movem.l d1-d2/a0,-(sp)
+        moveq #0,d2
+        moveq #0,d0
+.slot:  bsr skill_id
+        beq.s .next
+        addq.w #1,d2
+.next:  addq.w #1,d0
+        cmp.w #SKILL_SLOTS,d0
+        blo.s .slot
+        move.w d2,d0
+        movem.l (sp)+,d1-d2/a0
+        rts
+
+; Z clear when > on PAGE_SKILLS can step right (level_slot < 7 and some slot
+; at or after level_slot is occupied). Preserves all else.
+skills_can_next:
+        movem.l d0-d1/a0,-(sp)
+        move.w level_slot,d0
+        cmp.w #SKILL_SLOTS-1,d0
+        bhs.s .no
+.slot:  bsr skill_id
+        bne.s .yes
+        addq.w #1,d0
+        cmp.w #SKILL_SLOTS,d0
+        blo.s .slot
+.no:    moveq #0,d0
+        bra.s .out
+.yes:   moveq #1,d0
+.out:   movem.l (sp)+,d0-d1/a0
+        rts
+
+; D0 a skill ID -> D2 its count in skills_backup when present and non-zero,
+; else NEW_COUNT. Preserves D0.
+skills_backup_count:
+        movem.l d0-d1/d3/a0-a1,-(sp)
+        moveq #NEW_COUNT,d2
+        lea skills_backup,a0
+        lea skills_backup+2*SKILL_SLOTS,a1
+        moveq #SKILL_SLOTS-1,d3
+.find:  bsr get_le
+        addq.l #2,a0
+        cmp.w d0,d1
+        bne.s .next
+        tst.b (a1)
+        beq.s .next
+        moveq #0,d2
+        move.b (a1),d2
+        bra.s .done
+.next:  addq.l #1,a1
+        dbra d3,.find
+.done:  movem.l (sp)+,d0-d1/d3/a0-a1
+        rts
+
+; D0 a skill ID (1..51) -> its trimmed name from skill_names at A3.
+put_skill_name:
+        movem.l d0-d1/a0-a1,-(sp)
+        mulu #14,d0
+        movea.l skill_names,a0
+        adda.w d0,a0
+        movea.l a3,a1
+        moveq #14-1,d1
+.copy:  move.b (a0)+,(a3)+
+        dbra d1,.copy
+.trim:  cmpa.l a1,a3
+        beq.s .done
+        cmp.b #' ',-1(a3)
+        bne.s .done
+        subq.l #1,a3
+        bra.s .trim
+.done:  movem.l (sp)+,d0-d1/a0-a1
+        rts
+
+; Status line on PAGE_SKILLS: the hovered skill's name (and slot if already
+; equipped), else how many skills the level has.
+skills_status:
+        lea status_text,a3
+        bsr skills_hit
+        tst.w d0
+        bmi.s .count
+        bsr put_skill_name
+        bsr skills_find
+        bmi.s .done
+        lea s_in_slot(pc),a0
+        bsr put_str
+        move.w d2,d0
+        addq.w #1,d0
+        bsr put_number
+        move.b #')',(a3)+
+        bra.s .done
+.count: lea s_skills_count(pc),a0
+        bsr put_str
+        bsr skills_count
+        bsr put_number
+        lea s_of_8(pc),a0
+        bsr put_str
+.done:  clr.b (a3)
+        bra status_done
+
+; Help line on PAGE_SKILLS when no button is under the pointer.
+skills_help:
+        lea s_skills_grid_help(pc),a0
+        move.w G_CURSOR_Y(a5),d1
+        cmp.w #SCREEN_ROWS,d1
+        blo.s .show
+        lea s_skills_panel_help(pc),a0
+        cmp.w #BAR_CURSOR_Y,d1
+        blo.s .show
+        lea s_skills_bar_help(pc),a0
+.show:  moveq #UI_DIM,d0
+        bra set_help
 
 ;----------------------------------------------------------------------------
 ; The bar in the Param mode
@@ -1314,6 +1738,14 @@ level_widget_state:
         move.w d0,d6
         cmp.w #ID_REMOVE,d6
         beq .used
+        cmp.w #ID_S_REMOVE,d6
+        beq .used
+        cmp.w #ID_S_PREV,d6
+        beq .s_prev
+        cmp.w #ID_S_NEXT,d6
+        beq .s_next
+        cmp.w #ID_S_CLEAR,d6
+        beq .s_clear
         cmp.w #ID_COUNT_LESS,d6
         beq .count_less
         cmp.w #ID_COUNT_MORE,d6
@@ -1341,6 +1773,19 @@ level_widget_state:
         bra .out
 .used:  move.w level_slot,d0
         bsr skill_id
+        beq .disabled
+        bra .out
+.s_prev:
+        tst.w level_slot
+        beq .disabled
+        bra .out
+.s_next:
+        bsr skills_can_next
+        beq .disabled
+        bra .out
+.s_clear:
+        bsr skills_count
+        tst.w d0
         beq .disabled
         bra .out
 .count_less:
@@ -1425,7 +1870,7 @@ level_widget_text:
         bra .out
 .limits:
         cmp.w #ID_LIMITS_TEXT,d0
-        bne .title
+        bne .skills_info
         lea s_limits_text(pc),a0        ; the cells the level can show: from
         bsr put_str                     ; the lower limits' screen's first
         lea limit_words+4,a0            ; to the upper limits' last
@@ -1448,6 +1893,31 @@ level_widget_text:
         add.w d2,d0
         lsr.w #CELL_SHIFT_Y,d0
         bra put_number
+.skills_info:
+        cmp.w #ID_SKILLS_INFO,d0
+        bne .title
+        lea s_slot_prefix(pc),a0
+        bsr put_str
+        move.w level_slot,d0
+        addq.w #1,d0
+        bsr put_number
+        lea s_of_8_colon(pc),a0
+        bsr put_str
+        move.w level_slot,d0
+        bsr skill_id
+        beq.s .slot_empty
+        move.w d1,d0
+        bsr put_skill_name
+        move.b #' ',(a3)+
+        move.b #'(',(a3)+
+        bsr selected_count
+        move.w d1,d0
+        bsr put_number
+        move.b #')',(a3)+
+        bra .out
+.slot_empty:
+        lea s_cell_empty(pc),a0
+        bra put_str
 .title: lea s_title_prefix(pc),a0
         bsr put_str
         lea title_text,a0
@@ -1501,9 +1971,20 @@ limits_widgets:
         WIDGET 260,ROW_B,46,ID_L_CANCEL,s_cancel,h_l_cancel
         dc.w -1
 
+skills_widgets:
+        WIDGET 4,ROW_A,312,ID_SKILLS_INFO,0,0
+        WIDGET 4,ROW_B,14,ID_S_PREV,s_prev_object,h_s_prev
+        WIDGET 20,ROW_B,14,ID_S_NEXT,s_next_object,h_s_next
+        WIDGET 38,ROW_B,40,ID_S_REMOVE,s_remove,h_s_remove
+        WIDGET 82,ROW_B,34,ID_S_CLEAR,s_clear,h_s_clear
+        WIDGET 220,ROW_B,34,ID_S_OK,s_ok,h_s_ok
+        WIDGET 260,ROW_B,46,ID_S_CANCEL,s_cancel,h_s_cancel
+        dc.w -1
+
 s_title:        dc.b "Title",0
 s_skills:       dc.b "Skills",0
 s_remove:       dc.b "Remove",0
+s_clear:        dc.b "Clear",0
 s_start:        dc.b "Start",0
 s_limits:       dc.b "Limits",0
 s_top_left:     dc.b "Top left",0
@@ -1517,10 +1998,23 @@ s_lost:         dc.b "Lost ",0
 s_title_prefix: dc.b "Title: ",0
 s_limits_text:  dc.b "Scroll limits: cells ",0
 s_limits_to:    dc.b " to ",0
+s_slot_prefix:  dc.b "Slot ",0
+s_of_8_colon:   dc.b " of 8: ",0
+s_skills_count: dc.b "Skills: ",0
+s_of_8:         dc.b " of 8",0
+s_in_slot:      dc.b "  (slot ",0
+s_swapped:      dc.b "Swapped with slot ",0
+s_already_slot: dc.b "Already in slot ",0
 h_level:        dc.b "Parameters: title, skills, time and grading (L)",0
 h_title:        dc.b "Type the level's title (N)",0
-h_skills:       dc.b "Choose 8 skills with the game's picker (P)",0
+h_skills:       dc.b "Choose or change the level's skills (P)",0
 h_remove:       dc.b "Remove the selected skill (Del)",0
+h_s_prev:       dc.b "Previous skill slot (,)",0
+h_s_next:       dc.b "Next skill slot (.)",0
+h_s_remove:     dc.b "Remove the selected slot's skill (Del)",0
+h_s_clear:      dc.b "Clear all eight skill slots (C)",0
+h_s_ok:         dc.b "Keep these skills (Return)",0
+h_s_cancel:     dc.b "Keep the old skills (Esc)",0
 h_count_less:   dc.b "Fewer of the selected skill (-)",0
 h_count_more:   dc.b "More of the selected skill (+)",0
 h_slot_prev:    dc.b "Select the skill to the left (,)",0
@@ -1544,6 +2038,9 @@ s_title_help:   dc.b "Type the title   Backspace: delete   Return: done",0
 s_level_map_help: dc.b "Frame: start view (V). Dotted: limits (Shift+V)",0
 s_limits_help:  dc.b "Scroll the view, then set Top left or Bottom right",0
 s_level_panel_help: dc.b "Click a skill in the panel to select it",0
+s_skills_grid_help: dc.b "Click: set skill   Right click: remove",0
+s_skills_panel_help: dc.b "Click: select slot   Right click: remove",0
+s_skills_bar_help: dc.b "Return: keep   Esc: cancel",0
 s_view_set:     dc.b "The level now starts with this view",0
 s_view_widened: dc.b "Start view set; the scroll limits were widened",0
 s_limits_set:   dc.b "Limits set; lemmings that leave the dotted frame die",0
@@ -1558,14 +2055,15 @@ s_blocker_out:  dc.b "Blocker removed: it works only in the Classic style",0
 
         section editor_bss,bss
 
-old_skills:     ds.b 3*SKILL_SLOTS      ; the IDs (LE16) and counts before
+skills_backup:  ds.b 3*SKILL_SLOTS      ; the IDs (LE16) and counts on open
 title_text:     ds.b TITLE_SIZE
 title_length:   ds.b 1
-picker_cancel:  ds.b 1
-picker_classic: ds.b 1                  ; the picker offers the Blocker
+skills_classic: ds.b 1                  ; the grid offers the Blocker
+skills_pal_want: ds.b 1                 ; back buffer wants PAL_PRACTICE
+skills_pal_shown: ds.b 1                ; COP_PLAY_COLOURS holds PAL_PRACTICE
                 even
+skills_old_slot: ds.w 1
 skills_fitted:  ds.w 1                  ; the skill skills_fit took out
 resume_x:       ds.w 1
 resume_y:       ds.w 1
-picker_saved:   ds.l 2*PICKER_POINTS    ; the picker's original bytes
 frame_words:    ds.w 6                  ; the record's scroll words, to draw
